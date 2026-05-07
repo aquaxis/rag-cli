@@ -1,0 +1,24 @@
+[package]
+name = "rag-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rag-common = { path = "../common" }
+rag-pipeline = { path = "../pipeline" }
+rag-search = { path = "../search" }
+rag-llm = { path = "../llm" }
+tokio = { workspace = true, features = ["full"] }
+axum = { workspace = true, features = ["multipart"] }
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+async-stream.workspace = true
+bytes.workspace = true

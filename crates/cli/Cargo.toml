@@ -1,0 +1,24 @@
+[package]
+name = "rag-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rag-cli"
+path = "src/main.rs"
+
+[dependencies]
+rag-common = { path = "../common" }
+rag-pipeline = { path = "../pipeline" }
+rag-search = { path = "../search" }
+rag-llm = { path = "../llm" }
+rag-api = { path = "../api" }
+tokio = { workspace = true, features = ["full"] }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+owo-colors.workspace = true

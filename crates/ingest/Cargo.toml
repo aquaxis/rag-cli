@@ -1,0 +1,22 @@
+[package]
+name = "rag-ingest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rag-common = { path = "../common" }
+tokio = { workspace = true, features = ["full", "fs"] }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+reqwest = { workspace = true, features = ["json", "multipart", "rustls-tls", "stream"] }
+anyhow.workspace = true
+tracing.workspace = true
+quick-xml = { workspace = true }
+flate2.workspace = true
+url.workspace = true
+base64.workspace = true
+percent-encoding.workspace = true
+mime_guess.workspace = true
+regex.workspace = true

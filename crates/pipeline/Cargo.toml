@@ -1,0 +1,21 @@
+[package]
+name = "rag-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rag-common = { path = "../common" }
+rag-ingest = { path = "../ingest" }
+rag-chunk = { path = "../chunk" }
+rag-embed = { path = "../embed" }
+rag-search = { path = "../search" }
+tokio = { workspace = true, features = ["full", "fs"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+walkdir.workspace = true
+uuid.workspace = true

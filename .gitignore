@@ -1,5 +1,12 @@
+# Rust
+target/
+Cargo.lock.bak
+
+# Legacy Node.js artifacts (kept for safety)
 node_modules/
 dist/
+
+# Sample / generated data
 data/pdf/
 data/svg/
 data/drawio/
@@ -8,6 +15,8 @@ data/txt/
 data/url/
 data/markdown/
 data/upload/
+
+# Environment
 .env
 *.log
 
@@ -17,4 +26,3 @@ data/upload/
 # Editor / AI tooling local configs
 .claude/
 .mcp.json
-
