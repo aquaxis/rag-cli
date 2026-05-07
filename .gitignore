@@ -1,0 +1,20 @@
+node_modules/
+dist/
+data/pdf/
+data/svg/
+data/drawio/
+data/md/
+data/txt/
+data/url/
+data/markdown/
+data/upload/
+.env
+*.log
+
+# AI project metadata
+.aiprj/
+
+# Editor / AI tooling local configs
+.claude/
+.mcp.json
+
