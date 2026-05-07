@@ -51,6 +51,8 @@ pub struct Config {
     pub rag_hf_cache_dir: Option<String>,
     #[serde(default)]
     pub rag_reranker_model_dir: Option<String>,
+    #[serde(default = "default_rag_rerank_batch")]
+    pub rag_rerank_batch: usize,
 }
 
 fn default_qdrant_url() -> String {
@@ -113,6 +115,9 @@ fn default_embed_dim() -> u64 {
 fn default_log_level() -> String {
     "info".to_string()
 }
+fn default_rag_rerank_batch() -> usize {
+    8
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -144,6 +149,7 @@ impl Default for Config {
             log_level: default_log_level(),
             rag_hf_cache_dir: None,
             rag_reranker_model_dir: None,
+            rag_rerank_batch: default_rag_rerank_batch(),
         })
     }
 }

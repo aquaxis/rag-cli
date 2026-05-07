@@ -118,9 +118,34 @@ cargo fmt             # フォーマット
 cargo clippy          # 静的解析
 ```
 
+## リランカ（bge-reranker-v2-m3）について
+
+`rag-cli search` のリランクは bge-reranker-v2-m3-ONNX を CPU + fp32 で動かす。
+初回起動時に HuggingFace Hub から ~600 MB のモデルファイル（`model.onnx` + `model.onnx_data` + `tokenizer.json`）を取得する。
+
+```bash
+# 既定: ~/.cache/huggingface/hub/ に DL（初回のみネットワーク接続必要）
+./target/release/rag-cli search "<query>" --top-n 5
+
+# キャッシュ先を上書き
+RAG_HF_CACHE_DIR=/path/to/hf-cache ./target/release/rag-cli search "<query>"
+
+# オフライン環境: 事前 DL したディレクトリを直接指定
+#   /path/to/dir/{model.onnx, model.onnx_data, tokenizer.json}
+RAG_RERANKER_MODEL_DIR=/path/to/dir ./target/release/rag-cli search "<query>"
+
+# リランクをスキップ（bi-encoder の score のみで上位を返す）
+./target/release/rag-cli search "<query>" --no-rerank
+```
+
+`RAG_RERANK_BATCH`（既定 8）でバッチサイズを調整可。メモリ不足時は 1 に下げる。
+
+セッションは `OnceLock<Mutex<Session>>` でプロセス内キャッシュされるため、`rag-cli serve` で起動した API は 2 回目以降のリクエストで初期化コストを払わない（cold ~2.3s → warm ~0.4s）。
+
 ## バージョン履歴
 
-- **v0.2.0** — Rust 全面移植。Node / pnpm 撤廃。
+- **v0.2.1** — リランカ ONNX 本格統合（`ort` + `tokenizers` + `hf-hub`）。
+- v0.2.0 — Rust 全面移植。Node / pnpm 撤廃。リランカはスタブ。
 - v0.1.x — TS / Node.js 実装（git 履歴の `v0.1.x` タグから取得可能）。
 
 ## セキュリティ
