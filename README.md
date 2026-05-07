@@ -20,9 +20,9 @@
 git clone https://github.com/aquaxis/rag-cli.git
 cd rag-cli
 cargo build --release
-docker compose up -d
-docker exec rag-ollama ollama pull bge-m3
-docker exec rag-ollama ollama pull qwen2.5:7b-instruct
+podman compose up -d
+podman exec rag-ollama ollama pull bge-m3
+podman exec rag-ollama ollama pull qwen2.5:7b-instruct
 ./target/release/rag-cli ingest data/md/note.md
 ./target/release/rag-cli search "サンプルメモの概要は？" --top-n 3 --no-rerank
 ```
@@ -45,9 +45,9 @@ cargo install --path crates/cli
 # → ~/.cargo/bin/rag-cli
 ```
 
-### C. Docker（任意）
+### C. Podman（任意）
 
-外部サービス（Qdrant / Ollama / Docling Serve）は `docker compose up -d` で起動。`rag-cli` 本体は host で動作する。
+外部サービス（Qdrant / Ollama / Docling Serve）は `podman compose up -d` で起動。`rag-cli` 本体は host で動作する。
 
 詳細手順とトラブルシュートは [`./doc/01-installation.md`](./doc/01-installation.md)。
 
@@ -57,7 +57,7 @@ cargo install --path crates/cli
 
 | ドキュメント | 内容 |
 |------------|------|
-| [01. インストール](./doc/01-installation.md) | Rust toolchain / Docker / Ollama / llama.cpp の導入 |
+| [01. インストール](./doc/01-installation.md) | Rust toolchain / Podman / Ollama / llama.cpp の導入 |
 | [02. クイックスタート](./doc/02-quickstart.md) | 取込 → 検索 → API 起動の最短手順 |
 | [03. CLI リファレンス](./doc/03-cli.md) | 5 サブコマンドの全引数と出力例 |
 | [04. REST API リファレンス](./doc/04-rest-api.md) | 7 エンドポイントの仕様と curl 例 |

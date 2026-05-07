@@ -9,7 +9,7 @@
 | OS | Linux (Ubuntu 22.04+ を確認) / macOS（Apple Silicon を含む）。Windows は WSL のみ。 |
 | Rust | stable 1.88 以上（`rust-toolchain.toml` で固定） |
 | Cargo | stable 同梱 |
-| Docker | 24.0+, Docker Compose v2.20+（外部サービス起動用） |
+| Podman | 4.0+（`podman compose` 同梱）または `podman-compose`。Docker Compose 互換ファイル `docker-compose.yml` をそのまま利用可能 |
 | Ollama | 0.5.x 以上（または llama.cpp `llama-server`） |
 | RAM | 32 GB 推奨（LLM 推論時 16 GB 以上） |
 | ストレージ | SSD 100 GB 以上（モデルキャッシュと Qdrant データ用） |
@@ -56,21 +56,21 @@ cargo install --path crates/cli
 
 ## 外部サービスの起動
 
-### Docker Compose で Qdrant / Ollama / Docling Serve を起動
+### Podman Compose で Qdrant / Ollama / Docling Serve を起動
 
 ```bash
-docker compose up -d
-docker compose ps
+podman compose up -d
+podman compose ps
 ```
 
-ポートの既定: Qdrant `127.0.0.1:6333`、Ollama `127.0.0.1:11434`、Docling Serve `127.0.0.1:5001`。
+`podman compose` は Podman 4.0 以降に同梱されている（古い環境では `podman-compose` Python パッケージを使う）。同梱の `docker-compose.yml` ファイル名はそのまま認識される。ポートの既定: Qdrant `127.0.0.1:6333`、Ollama `127.0.0.1:11434`、Docling Serve `127.0.0.1:5001`。
 
 ### Ollama にモデルを投入
 
 ```bash
-docker exec rag-ollama ollama pull bge-m3
-docker exec rag-ollama ollama pull qwen2.5:7b-instruct
-docker exec rag-ollama ollama list
+podman exec rag-ollama ollama pull bge-m3
+podman exec rag-ollama ollama pull qwen2.5:7b-instruct
+podman exec rag-ollama ollama list
 ```
 
 `bge-m3`（埋込、1024 dim）と `qwen2.5:7b-instruct`（LLM）が必要。
