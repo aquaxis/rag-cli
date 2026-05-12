@@ -14,7 +14,7 @@
 - Ingestion supports **PDF / images / SVG / drawio / Markdown / plain text / Web (URL)**. SVG and drawio use the newly added XML parser + label extraction path; Web uses Docling Serve's `/v1alpha/convert/source` URL input path.
 - External applications / CLI / shell scripts can access the Hono REST API at `127.0.0.1:7777`.
 - Users can access all features from the shell via `pnpm rag {ingest|search|status|reindex|serve} ...`.
-- Japanese support: multilingual `bge-m3` embeddings (1024 dim), `qwen2.5:7b-instruct` LLM, Japanese-enhanced chunking with `、。！？` as priority separators.
+- Japanese support: multilingual `bge-m3` embeddings (1024 dim), `qwen2.5:7b-instruct` LLM, Japanese-enhanced chunking with `。、!?` as priority separators.
 - This guide is structured as **inherit + override + append** from the reference guide `pdf_image_rag_guide_nodejs.md`, with verification commands and expected results at the end of each section.
 
 ---
@@ -50,7 +50,7 @@ The reference guide `pdf_image_rag_guide_nodejs.md` is a **general-purpose** PDF
 2. **llama.cpp** as an alternative inference backend alongside Ollama (for environments where Ollama doesn't work)
 3. **HTTP REST API** (Hono) for external applications / CLI / any client
 4. **User CLI** (`pnpm rag`) for direct shell operation
-5. **Japanese enhancement** (punctuation `。、！？` as priority separators, qwen2.5 as default)
+5. **Japanese enhancement** (punctuation `。、!?` as priority separators, qwen2.5 as default)
 
 When referencing sections/code from the reference guide, use **section numbers** and maintain a granularity that allows this guide to be self-contained.
 
@@ -1063,7 +1063,7 @@ export interface Chunk {
 const JP_SEPARATORS = [
   '\n\n',  // Paragraph
   '\n',    // Line
-  '。', '！', '？',  // Japanese sentence-ending punctuation
+  '。', '!', '?',  // Japanese sentence-ending punctuation
   '. ', '! ', '? ', // English sentence endings
   '、',                // Japanese comma (last resort)
   ' ',                 // Space
