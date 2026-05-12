@@ -1,150 +1,150 @@
-# 05. 設定
+# 05. Configuration
 
-`rag-cli` は `figment` を使って `.env` + 環境変数 + 既定値をマージする。一次ソースは [`crates/common/src/config.rs`](../crates/common/src/config.rs)。
+`rag-cli` uses `figment` to merge `.env` + environment variables + defaults. The primary source is [`crates/common/src/config.rs`](../crates/common/src/config.rs).
 
-## 設定の優先順位
+## Configuration Priority
 
-1. **環境変数**（最優先）
-2. **`.env` ファイル**（リポジトリ ルート、`dotenvy` で読込）
-3. **既定値**（`Config` の `default_*` 関数）
+1. **Environment variables** (highest priority)
+2. **`.env` file** (repository root, loaded by `dotenvy`)
+3. **Defaults** (`Config`'s `default_*` functions)
 
-`Config` は `OnceCell` で起動直後にロードされ、以後は不変。CLI で `--port N` を指定した場合のみ `RAG_API_PORT` を上書きする例外がある。
+`Config` is loaded once at startup via `OnceCell` and is immutable thereafter. The only exception is `--port N` on the CLI, which overrides `RAG_API_PORT`.
 
-## `.env` の使い方
+## Using `.env`
 
 ```bash
 cp .env.example .env
 $EDITOR .env
 ```
 
-`.env` が存在しない場合でも、すべての環境変数に既定値があるため起動は可能。
+Even without a `.env` file, all environment variables have defaults, so the application starts.
 
-## 環境変数一覧
+## Environment Variables
 
 ### Qdrant
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant REST エンドポイント |
-| `QDRANT_API_KEY` | （未設定） | API key、設定時は `api-key` ヘッダで送信 |
-| `QDRANT_COLLECTION` | `rag_documents` | 使用 collection 名 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant REST endpoint |
+| `QDRANT_API_KEY` | (unset) | API key; sent as `api-key` header when set |
+| `QDRANT_COLLECTION` | `rag_documents` | Collection name to use |
 
-### Backend 切替
+### Backend Switch
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `RAG_BACKEND` | `ollama` | `ollama` または `llamacpp`。embed と LLM の経路を切替 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RAG_BACKEND` | `ollama` | `ollama` or `llamacpp`. Switches the embedding and LLM backend |
 
 ### Ollama
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama サーバ |
-| `OLLAMA_LLM_MODEL` | `qwen2.5:7b-instruct` | LLM モデル名 |
-| `OLLAMA_EMBED_MODEL` | `bge-m3` | 埋込モデル名（dim は `EMBED_DIM` と一致必須） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama server |
+| `OLLAMA_LLM_MODEL` | `qwen2.5:7b-instruct` | LLM model name |
+| `OLLAMA_EMBED_MODEL` | `bge-m3` | Embedding model name (dim must match `EMBED_DIM`) |
 
-### llama.cpp（副系統、`RAG_BACKEND=llamacpp` 時のみ使用）
+### llama.cpp (alternative backend, used only when `RAG_BACKEND=llamacpp`)
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `LLAMACPP_EMBED_URL` | `http://127.0.0.1:8080/v1` | OpenAI 互換 embeddings エンドポイント |
-| `LLAMACPP_LLM_URL` | `http://127.0.0.1:8081/v1` | OpenAI 互換 chat エンドポイント |
-| `LLAMACPP_EMBED_MODEL` | `bge-m3` | 埋込モデル名 |
-| `LLAMACPP_LLM_MODEL` | `qwen2.5-7b-instruct` | LLM モデル名 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLAMACPP_EMBED_URL` | `http://127.0.0.1:8080/v1` | OpenAI-compatible embeddings endpoint |
+| `LLAMACPP_LLM_URL` | `http://127.0.0.1:8081/v1` | OpenAI-compatible chat endpoint |
+| `LLAMACPP_EMBED_MODEL` | `bge-m3` | Embedding model name |
+| `LLAMACPP_LLM_MODEL` | `qwen2.5-7b-instruct` | LLM model name |
 
 ### Docling Serve
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `DOCLING_URL` | `http://127.0.0.1:5001` | Docling Serve エンドポイント（PDF / 画像 / Web URL 取込で使用） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DOCLING_URL` | `http://127.0.0.1:5001` | Docling Serve endpoint (used for PDF/image/Web URL ingestion) |
 
 ### Reranker
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `RERANKER_MODEL` | `onnx-community/bge-reranker-v2-m3-ONNX` | HuggingFace Hub のモデル ID |
-| `RAG_HF_CACHE_DIR` | （未設定。`~/.cache/huggingface/hub/`） | HF Hub キャッシュディレクトリの上書き |
-| `RAG_RERANKER_MODEL_DIR` | （未設定） | 設定時は HF Hub 経由 DL をスキップし、このディレクトリから `model.onnx` `model.onnx_data` `tokenizer.json` を読込む |
-| `RAG_RERANK_BATCH` | `8` | リランカ推論のバッチサイズ |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RERANKER_MODEL` | `onnx-community/bge-reranker-v2-m3-ONNX` | HuggingFace Hub model ID |
+| `RAG_HF_CACHE_DIR` | (unset. Defaults to `~/.cache/huggingface/hub/`) | Override HF Hub cache directory |
+| `RAG_RERANKER_MODEL_DIR` | (unset) | When set, skips HF Hub download and reads `model.onnx`, `model.onnx_data`, `tokenizer.json` from this directory |
+| `RAG_RERANK_BATCH` | `8` | Reranker inference batch size |
 
-詳細は [`./06-reranker.md`](./06-reranker.md)。
+See [`./06-reranker.md`](./06-reranker.md) for details.
 
 ### REST API
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `RAG_API_HOST` | `127.0.0.1` | バインドホスト |
-| `RAG_API_PORT` | `7777` | バインドポート（`rag-cli serve --port N` で上書き可） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RAG_API_HOST` | `127.0.0.1` | Bind host |
+| `RAG_API_PORT` | `7777` | Bind port (overridable via `rag-cli serve --port N`) |
 
-### チャンキング
+### Chunking
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `CHUNK_SIZE` | `512` | チャンク上限（トークン換算）。日本語は文字 ≒ トークンで `* 3` 倍を内部適用 |
-| `CHUNK_OVERLAP` | `64` | チャンク間 overlap（同上、`* 3` 倍を内部適用） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CHUNK_SIZE` | `512` | Chunk size limit (in tokens). For Japanese, characters ~= tokens, so `* 3` is applied internally |
+| `CHUNK_OVERLAP` | `64` | Chunk overlap (same `* 3` multiplier applied internally) |
 
-### 検索
+### Retrieval
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
-| `TOP_K_RETRIEVE` | `20` | Qdrant Dense 検索の候補数 |
-| `TOP_K_RERANK` | `5` | rerank 後の最終出力数 |
-| `EMBED_DIM` | `1024` | 埋込ベクトルの次元（`bge-m3` は 1024、不一致は実行時エラー） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TOP_K_RETRIEVE` | `20` | Number of Qdrant Dense search candidates |
+| `TOP_K_RERANK` | `5` | Number of results after reranking |
+| `EMBED_DIM` | `1024` | Embedding vector dimension (`bge-m3` is 1024; mismatch causes a runtime error) |
 
-### ロギング
+### Logging
 
-| 環境変数 | 既定値 | 説明 |
-|---------|--------|------|
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `LOG_LEVEL` | `info` | `error` `warn` `info` `debug` `trace` |
 
-`RUST_LOG` も `tracing-subscriber::EnvFilter` 経由で認識される（より柔軟、モジュール別の指定が可能）。
+`RUST_LOG` is also recognized via `tracing-subscriber::EnvFilter` (more flexible, supports per-module targeting).
 
-## サンプル `.env`
+## Sample `.env`
 
 ```bash
-# ─── Qdrant ───
+# --- Qdrant ---
 QDRANT_URL=http://127.0.0.1:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION=rag_documents
 
-# ─── Backend ───
+# --- Backend ---
 RAG_BACKEND=ollama
 
-# ─── Ollama ───
+# --- Ollama ---
 OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_LLM_MODEL=qwen2.5:7b-instruct
 OLLAMA_EMBED_MODEL=bge-m3
 
-# ─── llama.cpp（任意）───
+# --- llama.cpp (optional) ---
 LLAMACPP_EMBED_URL=http://127.0.0.1:8080/v1
 LLAMACPP_LLM_URL=http://127.0.0.1:8081/v1
 LLAMACPP_EMBED_MODEL=bge-m3
 LLAMACPP_LLM_MODEL=qwen2.5-7b-instruct
 
-# ─── Docling Serve ───
+# --- Docling Serve ---
 DOCLING_URL=http://127.0.0.1:5001
 
-# ─── Reranker ───
+# --- Reranker ---
 RERANKER_MODEL=onnx-community/bge-reranker-v2-m3-ONNX
 # RAG_HF_CACHE_DIR=
 # RAG_RERANKER_MODEL_DIR=
 RAG_RERANK_BATCH=8
 
-# ─── REST API ───
+# --- REST API ---
 RAG_API_HOST=127.0.0.1
 RAG_API_PORT=7777
 
-# ─── チャンキング・検索 ───
+# --- Chunking / Retrieval ---
 CHUNK_SIZE=512
 CHUNK_OVERLAP=64
 TOP_K_RETRIEVE=20
 TOP_K_RERANK=5
 EMBED_DIM=1024
 
-# ─── ロギング ───
+# --- Logging ---
 LOG_LEVEL=info
 ```
 
 ---
 
-← [`./04-rest-api.md`](./04-rest-api.md) | → [`./06-reranker.md`](./06-reranker.md)
+<- [`./04-rest-api.md`](./04-rest-api.md) | -> [`./06-reranker.md`](./06-reranker.md)

@@ -1,41 +1,41 @@
-# 07. トラブルシュート
+# 07. Troubleshooting
 
-よくある問題と対処の早見表。
+Quick reference for common issues and their solutions.
 
-## サービス疎通
+## Service Connectivity
 
 ### `qdrant: down`
 
 ```bash
 rag-cli status
-# → "qdrant": "down"
+# -> "qdrant": "down"
 ```
 
-原因と対処:
+Causes and solutions:
 
-| 原因 | 対処 |
-|------|------|
-| Qdrant 未起動 | `podman compose up -d qdrant` で起動 |
-| URL 不一致 | `QDRANT_URL` を確認（既定 `http://127.0.0.1:6333`） |
-| TLS / 認証必須 | `QDRANT_API_KEY` を `.env` に設定 |
+| Cause | Solution |
+|-------|----------|
+| Qdrant is not running | Start with `podman compose up -d qdrant` |
+| URL mismatch | Check `QDRANT_URL` (default `http://127.0.0.1:6333`) |
+| TLS / authentication required | Set `QDRANT_API_KEY` in `.env` |
 
 ```bash
 curl -fsS http://127.0.0.1:6333/readyz
-# → "all shards are ready"
+# -> "all shards are ready"
 ```
 
 ### `ollama: down`
 
 ```bash
 rag-cli status
-# → "ollama": "down"
+# -> "ollama": "down"
 ```
 
-| 原因 | 対処 |
-|------|------|
-| Ollama 未起動 | `ollama serve` または `podman compose up -d ollama` |
-| モデル未投入 | `podman exec rag-ollama ollama pull bge-m3` |
-| ホスト不一致 | `OLLAMA_HOST` を確認（既定 `http://127.0.0.1:11434`） |
+| Cause | Solution |
+|-------|----------|
+| Ollama is not running | `ollama serve` or `podman compose up -d ollama` |
+| Model not pulled | `podman exec rag-ollama ollama pull bge-m3` |
+| Host mismatch | Check `OLLAMA_HOST` (default `http://127.0.0.1:11434`) |
 
 ```bash
 curl -fsS http://127.0.0.1:11434/api/tags | jq '.models[].name'
@@ -43,126 +43,126 @@ curl -fsS http://127.0.0.1:11434/api/tags | jq '.models[].name'
 
 ### `docling: down`
 
-PDF / 画像 / Web URL 取込のみで必要。SVG / drawio / Markdown / テキストは Docling 不要。
+Only required for PDF/image/Web URL ingestion. SVG/drawio/Markdown/text do not need Docling.
 
-| 原因 | 対処 |
-|------|------|
-| Docling Serve 未起動 | `podman compose up -d docling` |
-| OOM | `podman compose logs docling` で OOM を確認、メモリ増設 / バッチ縮小 |
+| Cause | Solution |
+|-------|----------|
+| Docling Serve is not running | `podman compose up -d docling` |
+| OOM | Check `podman compose logs docling` for OOM; increase memory or reduce batch size |
 
-## 取込のエラー
+## Ingestion Errors
 
 ### `Dim mismatch: expected 1024, got N`
 
-| 原因 | 対処 |
-|------|------|
-| 別の embed モデルを `OLLAMA_EMBED_MODEL` に設定 | `EMBED_DIM` をモデルに合わせる、または bge-m3 に戻す |
-| `LLAMACPP_EMBED_MODEL` が GGUF 化された別モデル | dim を確認して `EMBED_DIM` を更新 |
+| Cause | Solution |
+|-------|----------|
+| A different embedding model is set in `OLLAMA_EMBED_MODEL` | Set `EMBED_DIM` to match the model, or switch back to bge-m3 |
+| `LLAMACPP_EMBED_MODEL` points to a different GGUF model | Check the dimension and update `EMBED_DIM` |
 
 ### `Docling errors: ...`
 
-Docling Serve からのエラー。考えられる原因:
+Errors from Docling Serve. Possible causes:
 
-| 原因 | 対処 |
-|------|------|
-| ファイル破損 | 別の PDF / 画像で再試行 |
-| OOM（大量ページ PDF） | ページを分割、または並列度を下げる |
-| OCR エンジン未準備 | Docling コンテナが初回 DL 中の可能性あり、起動ログを確認 |
+| Cause | Solution |
+|-------|----------|
+| Corrupted file | Retry with a different PDF/image |
+| OOM (large multi-page PDF) | Split pages or reduce concurrency |
+| OCR engine not ready | Docling container may still be downloading on first start; check startup logs |
 
 ### `Empty markdown from URL: <url>`
 
-URL の取得は成功したが Markdown が空。原因:
+The URL was fetched successfully but the Markdown output is empty. Causes:
 
-- robots.txt や WAF でブロックされている
-- JavaScript レンダリングが必要なページ（Docling は対応していない）
-- 認証が必要
+- Blocked by robots.txt or WAF
+- Page requires JavaScript rendering (Docling does not support this)
+- Authentication required
 
-Docling のスコープ外。事前にダウンロードしてローカルファイル取込に切替える。
+This is outside Docling's scope. Download the content manually and ingest as a local file instead.
 
-### 単一ファイルが `unsupported extension: <ext>` で失敗
+### Single file fails with `unsupported extension: <ext>`
 
-対応拡張子は `.pdf` `.png` `.jpg` `.jpeg` `.tiff` `.bmp` `.svg` `.drawio` `.drawio.svg` `.md` `.markdown` `.txt` `.log` `.rst` `.urls`。それ以外は事前に変換する。
+Supported extensions: `.pdf` `.png` `.jpg` `.jpeg` `.tiff` `.bmp` `.svg` `.drawio` `.drawio.svg` `.md` `.markdown` `.txt` `.log` `.rst` `.urls`. Convert unsupported formats beforehand.
 
-## リランカ関連
+## Reranker Issues
 
-### 初回起動が遅い、応答がない
+### First run is slow or appears unresponsive
 
-bge-reranker-v2-m3-ONNX の初回 DL は約 600 MB。ネットワーク帯域に応じて数十秒〜数分かかる。
+The initial download of bge-reranker-v2-m3-ONNX is ~600 MB. Depending on network bandwidth, this can take tens of seconds to minutes.
 
 ```bash
 LOG_LEVEL=info rag-cli search "..." --top-n 3 2>&1 | grep "reranker model"
-# → "reranker model files downloaded" が表示されれば DL 完了
+# -> "reranker model files downloaded" indicates download complete
 ```
 
 ### `model.onnx_data has zero size after download`
 
-DL が中断されて 0 byte ファイルが残った可能性。キャッシュを削除して再試行:
+The download may have been interrupted, leaving a 0-byte file. Delete the cache and retry:
 
 ```bash
 rm -rf ~/.cache/huggingface/hub/models--onnx-community--bge-reranker-v2-m3-ONNX
 rag-cli search "..." --top-n 3
 ```
 
-### HF Hub に接続できない（オフライン環境）
+### Cannot connect to HuggingFace Hub (offline environment)
 
-事前 DL 後、`RAG_RERANKER_MODEL_DIR` でローカルディレクトリを指定する。詳細は [`./06-reranker.md`](./06-reranker.md)。
+After pre-downloading, specify the local directory via `RAG_RERANKER_MODEL_DIR`. See [`./06-reranker.md`](./06-reranker.md) for details.
 
-### メモリ不足で OOM kill される
+### OOM killed due to insufficient memory
 
 ```bash
 RAG_RERANK_BATCH=1 rag-cli search "..." --top-n 3
 ```
 
-それでも不足する場合は `--no-rerank` で運用する。
+If still insufficient, use `--no-rerank`.
 
-## API サーバ
+## API Server
 
-### `Address already in use`（ポート 7777 衝突）
+### `Address already in use` (port 7777 conflict)
 
 ```bash
 rag-cli serve --port 7780
-# または
+# or
 RAG_API_PORT=7780 rag-cli serve
 ```
 
-`lsof -i :7777` で何が使っているか確認できる。
+Use `lsof -i :7777` to check what is using the port.
 
-### CORS でブラウザから叩けない
+### CORS prevents browser access
 
-API はすべてのオリジンを許可（`CorsLayer::permissive()`）するため通常は問題ないが、リバースプロキシ経由の場合はプロキシ側の設定を確認。
+The API allows all origins (`CorsLayer::permissive()`), so this is usually not an issue. If behind a reverse proxy, check the proxy's CORS settings.
 
-## ビルド / Cargo
+## Build / Cargo
 
 ### `error: failed to download` / `Network unreachable`
 
-ネットワーク制約で crates.io / HF Hub に接続できない場合:
+If network restrictions prevent access to crates.io / HF Hub:
 
 ```bash
-# crates.io: vendored 依存を使う
+# crates.io: use vendored dependencies
 cargo vendor
-# .cargo/config.toml に `replace-with = "vendored-sources"` を追加
+# Add `replace-with = "vendored-sources"` to .cargo/config.toml
 ```
 
 ### `linker error` / `cannot find -lonnxruntime`
 
-`ort` の `download-binaries` features が無効化されると発生する。`Cargo.toml` の workspace.dependencies で `ort` が default features を有効にしていることを確認。
+This occurs when the `download-binaries` feature of `ort` is disabled. Ensure `Cargo.toml` workspace.dependencies has `ort` with default features enabled:
 
 ```toml
-ort = { version = "2.0.0-rc.12" }  # default features を維持
+ort = { version = "2.0.0-rc.12" }  # keep default features enabled
 ```
 
-## ログレベル
+## Log Level
 
-詳細なログを出すには:
+For detailed logging:
 
 ```bash
 LOG_LEVEL=debug rag-cli search "..."
-# または モジュール別
+# Or per-module:
 RUST_LOG=rag_search=debug,rag_pipeline=info rag-cli search "..."
 ```
 
-エラーの詳細を確認するには `LOG_LEVEL=trace`。
+Use `LOG_LEVEL=trace` for error details.
 
 ---
 
-← [`./06-reranker.md`](./06-reranker.md) | → [`./08-architecture.md`](./08-architecture.md)
+<- [`./06-reranker.md`](./06-reranker.md) | -> [`./08-architecture.md`](./08-architecture.md)

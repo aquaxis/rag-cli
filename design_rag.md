@@ -1,256 +1,256 @@
-# スタンドアロン RAG 環境 構築ガイド
+# Standalone RAG Environment Setup Guide
 
-> **対象読者**: ローカル環境で完結するスタンドアロン RAG サブシステムを構築したいエンジニア
-> **最終更新**: 2026-05-06
-> **配置**: 任意（`./design_rag.md` として参照）
-> **参照解**: `./pdf_image_rag_guide_nodejs.md`（1640 行、本ガイドの土台）
-
----
-
-## TL;DR（30 行未満で要点）
-
-- 単一 Markdown ガイドで **ローカル環境に閉じたスタンドアロン RAG サブシステム**（プロジェクトディレクトリ: `rag-system/`）を構築する。
-- スタックは **Node.js 20+ / pnpm 9+ / Docker Compose v2 / Qdrant / Ollama（または llama.cpp）/ Docling Serve / Hono / transformers.js**。外部 SaaS への依存はゼロ。
-- 取込は **PDF / 画像 / SVG / drawio / Markdown / プレーンテキスト / Web (URL)** に対応。SVG・drawio は本ガイドで新規追加した XML パーサ + ラベル抽出経路で、Web は Docling Serve `/v1alpha/convert/source` の URL 入力経路で扱う。
-- 外部アプリ / CLI / シェルスクリプト等の任意のクライアントから、`127.0.0.1:7777` の Hono REST API を叩いて利用する。
-- ユーザは shell から `pnpm rag {ingest|search|status|reindex|serve} ...` で全機能にアクセスできる。
-- 日本語対応: 埋め込みは多言語 `bge-m3`（1024 dim）、LLM は `qwen2.5:7b-instruct`、チャンキングは `。、！？` を優先 separator に追加した日本語強化版。
-- 本ガイドは参照ガイド `pdf_image_rag_guide_nodejs.md` を **継承 + 上書き + 追加** で構成しており、各章末に検証コマンドと期待結果を併記する。
+> **Target audience**: Engineers who want to build a standalone RAG subsystem that runs entirely on a local environment
+> **Last updated**: 2026-05-06
+> **Location**: Anywhere (referenced as `./design_rag.md`)
+> **Reference document**: `./pdf_image_rag_guide_nodejs.md` (1640 lines, the foundation of this guide)
 
 ---
 
-## 0. 参照ガイドとの関係
+## TL;DR (Key points in under 30 lines)
 
-### 0.1 継承 / 上書き / 追加 対比表
-
-| 章 | 内容 | 参照ガイドからの関係 |
-|----|------|-------------------|
-| 1 | アーキテクチャ概観 | 一部上書き |
-| 2 | 動作要件 | 継承 + llama.cpp 経路を追加 |
-| 3 | ディレクトリ配置（`rag-system/` 配下に閉じる） | **新規** |
-| 4 | Phase 0: プロジェクト初期化 | 継承（pnpm / TypeScript / .gitignore） |
-| 5 | Phase 1: Docker Compose | 継承 |
-| 6 | Phase 2: ドキュメント変換（**SVG / drawio / Markdown / テキスト / Web 追加**） | 一部新規 |
-| 7 | Phase 3: チャンキング（日本語強化） | 一部上書き |
-| 8 | Phase 4: 埋め込み生成（**llama.cpp 経路追加**） | 一部新規 |
-| 9 | Phase 5: Qdrant 投入 | 継承 |
-| 10 | Phase 6: 検索 + リランキング | 継承 |
-| 11 | Phase 7: ローカル LLM 応答（**llama.cpp 経路追加**） | 一部新規 |
-| 12 | Phase 8: HTTP API（Hono） | 一部上書き |
-| 13 | Phase 9: ユーザ CLI（`pnpm rag` サブコマンド） | **新規** |
-| 14 | Phase 10: 外部アプリ / クライアントからの利用例 | **新規** |
-| 15 | Phase 11: 運用・トラブルシューティング | 継承 |
-| 16 | 付録（代替スタック / 性能 / セキュリティ） | 一部上書き |
-
-### 0.2 本ガイドの位置付け
-
-参照ガイド `pdf_image_rag_guide_nodejs.md` は **汎用** な PDF/画像 RAG 構築手順である。本ガイドはそれを単独運用向けに整理し、以下を必ず付加する:
-
-1. 取込フォーマットに **SVG / drawio / Markdown / プレーンテキスト / Web (URL)** を追加
-2. 推論バックエンドに **llama.cpp** を Ollama と並走可能にする（Ollama が動かない環境向け）
-3. **HTTP REST API**（Hono）で外部アプリ / CLI / 任意クライアントから利用可能にする
-4. **ユーザ CLI**（`pnpm rag`）で shell から直接操作
-5. **日本語強化**（句読点 `。、！？` を優先 separator に追加、qwen2.5 を既定）
-
-参照ガイドの章 / コードを引用するときは **章番号で参照** し、本ガイド単独で構築完了できる粒度に保つ。
+- A single Markdown guide to build a **locally-contained standalone RAG subsystem** (project directory: `rag-system/`).
+- Stack: **Node.js 20+ / pnpm 9+ / Docker Compose v2 / Qdrant / Ollama (or llama.cpp) / Docling Serve / Hono / transformers.js**. Zero dependency on external SaaS.
+- Ingestion supports **PDF / images / SVG / drawio / Markdown / plain text / Web (URL)**. SVG and drawio use the newly added XML parser + label extraction path; Web uses Docling Serve's `/v1alpha/convert/source` URL input path.
+- External applications / CLI / shell scripts can access the Hono REST API at `127.0.0.1:7777`.
+- Users can access all features from the shell via `pnpm rag {ingest|search|status|reindex|serve} ...`.
+- Japanese support: multilingual `bge-m3` embeddings (1024 dim), `qwen2.5:7b-instruct` LLM, Japanese-enhanced chunking with `、。！？` as priority separators.
+- This guide is structured as **inherit + override + append** from the reference guide `pdf_image_rag_guide_nodejs.md`, with verification commands and expected results at the end of each section.
 
 ---
 
-## 1. アーキテクチャ概観
+## 0. Relationship to the Reference Guide
 
-### 1.1 全体図
+### 0.1 Inherit / Override / Append Comparison Table
+
+| Section | Content | Relationship to Reference Guide |
+|----------|---------|---------------------------------|
+| 1 | Architecture overview | Partially overridden |
+| 2 | Requirements | Inherited + llama.cpp path added |
+| 3 | Directory layout (contained within `rag-system/`) | **New** |
+| 4 | Phase 0: Project initialization | Inherited (pnpm / TypeScript / .gitignore) |
+| 5 | Phase 1: Docker Compose | Inherited |
+| 6 | Phase 2: Document conversion (**SVG / drawio / Markdown / text / Web added**) | Partially new |
+| 7 | Phase 3: Chunking (Japanese-enhanced) | Partially overridden |
+| 8 | Phase 4: Embedding generation (**llama.cpp path added**) | Partially new |
+| 9 | Phase 5: Qdrant ingestion | Inherited |
+| 10 | Phase 6: Search + reranking | Inherited |
+| 11 | Phase 7: Local LLM response (**llama.cpp path added**) | Partially new |
+| 12 | Phase 8: HTTP API (Hono) | Partially overridden |
+| 13 | Phase 9: User CLI (`pnpm rag` subcommands) | **New** |
+| 14 | Phase 10: External application / client usage examples | **New** |
+| 15 | Phase 11: Operations / Troubleshooting | Inherited |
+| 16 | Appendix (alternative stack / performance / security) | Partially overridden |
+
+### 0.2 Position of This Guide
+
+The reference guide `pdf_image_rag_guide_nodejs.md` is a **general-purpose** PDF/image RAG construction procedure. This guide adapts it for standalone operation and **always adds** the following:
+
+1. **SVG / drawio / Markdown / plain text / Web (URL)** as ingestion formats
+2. **llama.cpp** as an alternative inference backend alongside Ollama (for environments where Ollama doesn't work)
+3. **HTTP REST API** (Hono) for external applications / CLI / any client
+4. **User CLI** (`pnpm rag`) for direct shell operation
+5. **Japanese enhancement** (punctuation `。、！？` as priority separators, qwen2.5 as default)
+
+When referencing sections/code from the reference guide, use **section numbers** and maintain a granularity that allows this guide to be self-contained.
+
+---
+
+## 1. Architecture Overview
+
+### 1.1 Overall Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  外部クライアント（任意）                                                │
-│   ─ ユーザ shell / CLI / Web フロント / 他アプリ / シェルスクリプト等       │
-│   ─ curl / fetch / SDK で HTTP を発行                                  │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │ HTTP (127.0.0.1:7777)
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│         Hono API (Node.js / pnpm — rag-system/)                       │
-│   POST /ingest    POST /search    GET /status    POST /reindex        │
-│                                                                       │
-│   pnpm rag {ingest|search|status|reindex|serve}                       │
-└──────┬──────────────┬───────────────┬───────────────┬─────────────────┘
-       │              │               │               │
-       ▼              ▼               ▼               ▼
++----------------------------------------------------------------------+
+|  External clients (any)                                               |
+|   - User shell / CLI / Web front / other apps / shell scripts          |
+|   - curl / fetch / SDK for HTTP                                       |
++------------------+---------------------------------------------------+
+                   | HTTP (127.0.0.1:7777)
+                   v
++----------------------------------------------------------------------+
+|         Hono API (Node.js / pnpm -- rag-system/)                       |
+|   POST /ingest    POST /search    GET /status    POST /reindex        |
+|                                                                       |
+|   pnpm rag {ingest|search|status|reindex|serve}                       |
++------+-------------+---------------+---------------+-----------------+
+       |             |               |               |
+       v             v               v               v
   Docling Serve   Ollama          Qdrant         transformers.js
-  (PDF→MD)        (bge-m3 emb     (vector DB)    (bge-reranker-v2-m3)
-                   + qwen2.5
-                   LLM)            collection:
-                                   rag_documents
-       │
-       │ ← llama.cpp (llama-server) を Ollama の代替として併走可
-       ▼
-   /v1/chat/completions / /v1/embeddings (OpenAI 互換)
+  (PDF->MD)      (bge-m3 emb     (vector DB)    (bge-reranker-v2-m3)
+                  + qwen2.5
+                  LLM)            collection:
+                                  rag_documents
+       |
+       | <- llama.cpp (llama-server) can run alongside Ollama as an alternative
+       v
+   /v1/chat/completions / /v1/embeddings (OpenAI-compatible)
 ```
 
-### 1.2 データフロー
+### 1.2 Data Flow
 
-**取込（オフライン）**:
+**Ingestion (offline)**:
 ```
-  PDF / 画像 / SVG / drawio / Markdown / テキスト / Web URL
-     │
-     ▼
-  形式判定 (extension / mime / URL スキーム)
-     │
-     ├─ PDF / 画像          → Docling Serve (REST /convert/file) → Markdown
-     ├─ SVG / .drawio.svg   → fast-xml-parser → text/title/desc 抽出 → Markdown
-     ├─ drawio (.drawio)    → pako.inflateRaw → mxGraph XML → mxCell.value 抽出 → Markdown
-     ├─ Markdown / テキスト  → 直接読込み（必要に応じ frontmatter 除去）
-     └─ Web URL (http(s)://)→ Docling Serve (REST /convert/source URL) → Markdown
-     │
-     ▼
-  日本語強化チャンキング（句読点 separator）
-     │
-     ▼
-  Ollama bge-m3 (or llama.cpp embeddings) → 1024 dim Dense ベクトル
-     │
-     ▼
+  PDF / image / SVG / drawio / Markdown / text / Web URL
+     |
+     v
+  Format detection (extension / mime / URL scheme)
+     |
+     |-- PDF / image          -> Docling Serve (REST /convert/file) -> Markdown
+     |-- SVG / .drawio.svg   -> fast-xml-parser -> text/title/desc extraction -> Markdown
+     |-- drawio (.drawio)    -> pako.inflateRaw -> mxGraph XML -> mxCell.value extraction -> Markdown
+     |-- Markdown / text      -> direct read (frontmatter removal if needed)
+     +-- Web URL (http(s)://) -> Docling Serve (REST /convert/source URL) -> Markdown
+     |
+     v
+  Japanese-enhanced chunking (punctuation separators)
+     |
+     v
+  Ollama bge-m3 (or llama.cpp embeddings) -> 1024 dim Dense vectors
+     |
+     v
   Qdrant upsert (collection: rag_documents)
 ```
 
-**検索（オンライン）**:
+**Search (online)**:
 ```
-  ユーザ質問 (CLI / Hono /search / 任意クライアント)
-     │
-     ▼
-  bge-m3 でクエリ埋め込み
-     │
-     ▼
-  Qdrant Dense 検索 (top_k=20)
-     │
-     ▼
-  transformers.js bge-reranker-v2-m3 で rerank (top_n=5)
-     │
-     ▼
-  qwen2.5 (Ollama / llama.cpp) で回答生成
-     │
-     ▼
-  応答 + 出典（path / page / heading path / score）
+  User question (CLI / Hono /search / any client)
+     |
+     v
+  bge-m3 query embedding
+     |
+     v
+  Qdrant Dense search (top_k=20)
+     |
+     v
+  transformers.js bge-reranker-v2-m3 reranking (top_n=5)
+     |
+     v
+  qwen2.5 (Ollama / llama.cpp) response generation
+     |
+     v
+  Response + sources (path / page / heading path / score)
 ```
 
-### 1.3 コンポーネント責務
+### 1.3 Component Responsibilities
 
-| レイヤー | 技術 | 配置 |
-|--------|------|------|
-| ドキュメント変換（PDF / 画像 / Web URL） | **Docling Serve** | Docker、Node から HTTP（`/convert/file` または `/convert/source`） |
-| ドキュメント変換（SVG / drawio） | `fast-xml-parser` + `pako` | Node プロセス内 |
-| ドキュメント変換（Markdown / テキスト） | `node:fs` + `gray-matter` | Node プロセス内（変換不要、frontmatter 分離のみ） |
-| チャンキング | `@langchain/textsplitters` + 日本語句読点拡張 | Node プロセス内 |
-| 埋め込み | `bge-m3` on **Ollama** または **llama.cpp llama-server** | Docker / バイナリ、Node から HTTP |
-| ベクトル DB | **Qdrant** | Docker、Node から HTTP |
-| リランカ | `@huggingface/transformers` (ONNX) | Node プロセス内 |
-| LLM | `qwen2.5` on **Ollama** または **llama.cpp** | 同上 |
-| API | **Hono** | Node プロセス、`127.0.0.1:7777` |
-| CLI | `commander` | Node プロセス、`pnpm rag` |
-| 外部連携 | curl / fetch / 任意 HTTP クライアント | 既存資産への影響なし |
+| Layer | Technology | Location |
+|-------|-----------|----------|
+| Document conversion (PDF / image / Web URL) | **Docling Serve** | Docker, HTTP from Node (`/convert/file` or `/convert/source`) |
+| Document conversion (SVG / drawio) | `fast-xml-parser` + `pako` | Node process |
+| Document conversion (Markdown / text) | `node:fs` + `gray-matter` | Node process (no conversion needed, only frontmatter separation) |
+| Chunking | `@langchain/textsplitters` + Japanese punctuation extension | Node process |
+| Embedding | `bge-m3` on **Ollama** or **llama.cpp llama-server** | Docker / binary, HTTP from Node |
+| Vector DB | **Qdrant** | Docker, HTTP from Node |
+| Reranker | `@huggingface/transformers` (ONNX) | Node process |
+| LLM | `qwen2.5` on **Ollama** or **llama.cpp** | Same |
+| API | **Hono** | Node process, `127.0.0.1:7777` |
+| CLI | `commander` | Node process, `pnpm rag` |
+| External integration | curl / fetch / any HTTP client | No impact on existing assets |
 
 ---
 
-## 2. 動作要件
+## 2. Requirements
 
-### 2.1 ハードウェア / ソフトウェア
+### 2.1 Hardware / Software
 
-| 項目 | 要件 |
-|-----|------|
-| OS | Linux (Ubuntu 22.04+ 推奨) / macOS (Ollama 経路) |
-| CPU | 8 コア以上 |
-| RAM | 32 GB（Ollama LLM 推論時は 16 GB 以上推奨） |
-| GPU | 任意（NVIDIA + CUDA 12 系で Ollama / llama.cpp 加速） |
-| ストレージ | SSD 100 GB 以上（モデル + Qdrant データ + Docling キャッシュ） |
-| Node.js | **20.x 以上**（LTS 推奨） |
-| pnpm | **9.x 以上**（`npm install -g pnpm`） |
+| Item | Requirement |
+|------|-------------|
+| OS | Linux (Ubuntu 22.04+ recommended) / macOS (Ollama path) |
+| CPU | 8 cores or more |
+| RAM | 32 GB (16 GB+ recommended for Ollama LLM inference) |
+| GPU | Optional (NVIDIA + CUDA 12 for Ollama / llama.cpp acceleration) |
+| Storage | SSD 100 GB+ (models + Qdrant data + Docling cache) |
+| Node.js | **20.x+** (LTS recommended) |
+| pnpm | **9.x+** (`npm install -g pnpm`) |
 | Docker | 24.0+, Docker Compose v2.20+ |
-| Ollama | 0.5.x 以上（Docker 経由 or ホスト直） |
-| llama.cpp | `llama-server` バイナリ（任意。副系統） |
+| Ollama | 0.5.x+ (via Docker or host) |
+| llama.cpp | `llama-server` binary (optional, alternative backend) |
 
-### 2.2 ソフトウェア前提確認
+### 2.2 Software Prerequisites Check
 
 ```bash
-node --version            # v20.0.0 以上
-pnpm --version            # 9.0 以上
+node --version            # v20.0.0+
+pnpm --version            # 9.0+
 docker --version
 docker compose version
-nvidia-smi                # GPU 利用時
+nvidia-smi                # When using GPU
 ```
 
-### 2.3 ポート使用一覧
+### 2.3 Port Usage
 
-| サービス | ポート | 設定変数 |
-|---------|--------|--------|
+| Service | Port | Config Variable |
+|---------|------|-----------------|
 | Qdrant REST | 6333 | `QDRANT_URL` |
 | Qdrant gRPC | 6334 | - |
 | Ollama | 11434 | `OLLAMA_HOST` |
 | Docling Serve | 5001 | `DOCLING_URL` |
-| llama.cpp llama-server (副) | 8080（embeddings） / 8081（LLM） | `LLAMACPP_EMBED_URL` / `LLAMACPP_LLM_URL` |
-| **Hono API**（外部クライアント連携用） | **7777** | `RAG_API_PORT` |
+| llama.cpp llama-server (alternative) | 8080 (embeddings) / 8081 (LLM) | `LLAMACPP_EMBED_URL` / `LLAMACPP_LLM_URL` |
+| **Hono API** (external client interface) | **7777** | `RAG_API_PORT` |
 
-ポート衝突時は環境変数で上書きする。確認:
+Override with environment variables if ports conflict. Verify:
 ```bash
 ss -ltn '( sport = :7777 or sport = :6333 or sport = :11434 or sport = :5001 )'
 ```
 
 ---
 
-## 3. ディレクトリ配置
+## 3. Directory Layout
 
-RAG サブシステムは **単一プロジェクトディレクトリ** `rag-system/` 配下に閉じる。設置先は任意で、ユーザの `$HOME/projects/` でも、既存リポジトリの 1 サブディレクトリでもよい。
+The RAG subsystem is contained within a **single project directory** `rag-system/`. The location is arbitrary -- it can be in `$HOME/projects/` or a subdirectory of an existing repository.
 
 ```
-rag-system/                            ← RAG サブシステム本体（任意の親 dir に設置）
-├── design_rag.md                      ← 本ガイド（任意配置）
-├── pdf_image_rag_guide_nodejs.md      ← 参照ガイド（任意配置、不変）
-├── package.json
-├── pnpm-lock.yaml
-├── tsconfig.json
-├── docker-compose.yml
-├── .env.example
-├── .gitignore
-├── Makefile
-├── src/
-│   ├── config.ts                      ← 環境変数ロード
-│   ├── logger.ts
-│   ├── api/
-│   │   └── server.ts                  ← Hono サーバ (port 7777)
-│   ├── cli/
-│   │   └── index.ts                   ← `pnpm rag` エントリ
-│   ├── ingest/
-│   │   ├── index.ts                   ← 取込ディスパッチ（拡張子 / URL 判定）
-│   │   ├── pdf.ts                     ← Docling Serve `/convert/file`
-│   │   ├── svg.ts                     ← SVG XML パース（新規）
-│   │   ├── drawio.ts                  ← drawio mxGraph パース（新規）
-│   │   ├── markdown.ts                ← Markdown / テキスト直接読込み（新規）
-│   │   └── web.ts                     ← Web URL → Docling Serve `/convert/source`（新規）
-│   ├── chunk/
-│   │   └── japanese.ts                ← 日本語句読点考慮
-│   ├── embed/
-│   │   ├── index.ts                   ← バックエンド切替
-│   │   ├── ollama.ts
-│   │   └── llamacpp.ts                ← OpenAI 互換 /v1/embeddings
-│   ├── search/
-│   │   ├── qdrant.ts
-│   │   └── rerank.ts
-│   ├── llm/
-│   │   ├── index.ts
-│   │   ├── ollama.ts
-│   │   └── llamacpp.ts                ← OpenAI 互換 /v1/chat/completions
-│   └── pipeline/
-│       ├── ingest.ts                  ← 取込パイプライン
-│       └── retrieve.ts                ← 検索パイプライン
-└── data/                              ← .gitignore（バイナリ・モデル除く）
-    ├── pdf/
-    ├── svg/
-    ├── drawio/
-    ├── md/                            ← 直接取込み Markdown
-    ├── txt/                           ← プレーンテキスト
-    ├── url/                           ← URL 一覧（`*.urls` 形式テキスト、各行 1 URL）
-    └── markdown/                      ← 変換結果（中間生成物）
+rag-system/                            <- RAG subsystem (place anywhere)
++-- design_rag.md                      <- This guide (place anywhere)
++-- pdf_image_rag_guide_nodejs.md      <- Reference guide (place anywhere, immutable)
++-- package.json
++-- pnpm-lock.yaml
++-- tsconfig.json
++-- docker-compose.yml
++-- .env.example
++-- .gitignore
++-- Makefile
++-- src/
+|   +-- config.ts                      <- Environment variable loader
+|   +-- logger.ts
+|   +-- api/
+|   |   +-- server.ts                  <- Hono server (port 7777)
+|   +-- cli/
+|   |   +-- index.ts                   <- `pnpm rag` entry point
+|   +-- ingest/
+|   |   +-- index.ts                   <- Ingestion dispatch (extension / URL detection)
+|   |   +-- pdf.ts                     <- Docling Serve `/convert/file`
+|   |   +-- svg.ts                     <- SVG XML parsing (new)
+|   |   +-- drawio.ts                  <- drawio mxGraph parsing (new)
+|   |   +-- markdown.ts                <- Markdown / text direct read (new)
+|   |   +-- web.ts                     <- Web URL -> Docling Serve `/convert/source` (new)
+|   +-- chunk/
+|   |   +-- japanese.ts                <- Japanese punctuation-aware chunking
+|   +-- embed/
+|   |   +-- index.ts                   <- Backend switch
+|   |   +-- ollama.ts
+|   |   +-- llamacpp.ts                <- OpenAI-compatible /v1/embeddings
+|   +-- search/
+|   |   +-- qdrant.ts
+|   |   +-- rerank.ts
+|   +-- llm/
+|   |   +-- index.ts
+|   |   +-- ollama.ts
+|   |   +-- llamacpp.ts                <- OpenAI-compatible /v1/chat/completions
+|   +-- pipeline/
+|       +-- ingest.ts                  <- Ingestion pipeline
+|       +-- retrieve.ts                <- Search pipeline
++-- data/                              <- .gitignore (excluding binaries and models)
+    +-- pdf/
+    +-- svg/
+    +-- drawio/
+    +-- md/                            <- Direct ingestion Markdown
+    +-- txt/                           <- Plain text
+    +-- url/                           <- URL list (`*.urls` text format, one URL per line)
+    +-- markdown/                      <- Conversion output (intermediate artifacts)
 ```
 
-### 3.1 .gitignore（`rag/.gitignore`）
+### 3.1 .gitignore (`rag/.gitignore`)
 
 ```gitignore
 node_modules/
@@ -268,9 +268,9 @@ data/markdown/
 
 ---
 
-## 4. Phase 0: プロジェクト初期化
+## 4. Phase 0: Project Initialization
 
-### 4.1 ディレクトリ作成
+### 4.1 Create Directories
 
 ```bash
 mkdir -p rag-system/{src/{api,cli,ingest,chunk,embed,search,llm,pipeline},data/{pdf,svg,drawio,md,txt,url,markdown}}
@@ -300,38 +300,38 @@ pnpm init
 }
 ```
 
-### 4.3 依存パッケージ
+### 4.3 Dependencies
 
-**ランタイム**:
+**Runtime**:
 
 ```bash
 # HTTP / API
 pnpm add hono @hono/node-server @hono/zod-validator
 
-# 推論クライアント
+# Inference clients
 pnpm add ollama
-# llama.cpp 経路は標準 fetch + OpenAI 互換のため追加依存なし
+# llama.cpp path uses standard fetch + OpenAI-compatible, no additional dependencies
 
-# ベクトル DB
+# Vector DB
 pnpm add @qdrant/js-client-rest
 
-# リランカ
+# Reranker
 pnpm add @huggingface/transformers
 
-# テキスト処理
+# Text processing
 pnpm add @langchain/textsplitters gray-matter
 
-# XML / 圧縮（SVG / drawio 用）
+# XML / compression (for SVG / drawio)
 pnpm add fast-xml-parser pako
 
-# 画像（SVG OCR フォールバック、任意）
+# Image (SVG OCR fallback, optional)
 pnpm add sharp
 
-# ユーティリティ
+# Utilities
 pnpm add zod dotenv pino pino-pretty commander p-queue undici mime-types
 ```
 
-**開発依存**:
+**Dev dependencies**:
 
 ```bash
 pnpm add -D typescript tsx vitest @types/node @types/mime-types @types/pako
@@ -362,7 +362,7 @@ pnpm add -D typescript tsx vitest @types/node @types/mime-types @types/pako
 }
 ```
 
-### 4.5 環境変数（`.env.example`）
+### 4.5 Environment Variables (`.env.example`)
 
 ```ini
 # === Qdrant ===
@@ -370,7 +370,7 @@ QDRANT_URL=http://127.0.0.1:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION=rag_documents
 
-# === 推論バックエンド切替 ===
+# === Inference backend switch ===
 RAG_BACKEND=ollama        # ollama | llamacpp
 
 # === Ollama ===
@@ -378,7 +378,7 @@ OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_LLM_MODEL=qwen2.5:7b-instruct
 OLLAMA_EMBED_MODEL=bge-m3
 
-# === llama.cpp (副系統、OpenAI 互換) ===
+# === llama.cpp (alternative, OpenAI-compatible) ===
 LLAMACPP_EMBED_URL=http://127.0.0.1:8080/v1
 LLAMACPP_LLM_URL=http://127.0.0.1:8081/v1
 LLAMACPP_EMBED_MODEL=bge-m3
@@ -387,14 +387,14 @@ LLAMACPP_LLM_MODEL=qwen2.5-7b-instruct
 # === Docling Serve ===
 DOCLING_URL=http://127.0.0.1:5001
 
-# === リランカー ===
+# === Reranker ===
 RERANKER_MODEL=onnx-community/bge-reranker-v2-m3-ONNX
 
 # === Hono API ===
 RAG_API_HOST=127.0.0.1
 RAG_API_PORT=7777
 
-# === ハイパーパラメータ ===
+# === Hyperparameters ===
 CHUNK_SIZE=512
 CHUNK_OVERLAP=64
 TOP_K_RETRIEVE=20
@@ -403,7 +403,7 @@ EMBED_DIM=1024
 LOG_LEVEL=info
 ```
 
-### 4.6 設定ローダー（`src/config.ts`）
+### 4.6 Configuration Loader (`src/config.ts`)
 
 ```ts
 import 'dotenv/config';
@@ -444,7 +444,7 @@ export const config = envSchema.parse(process.env);
 export type Config = typeof config;
 ```
 
-### 4.7 ロガー（`src/logger.ts`）
+### 4.7 Logger (`src/logger.ts`)
 
 ```ts
 import pino from 'pino';
@@ -458,12 +458,12 @@ export const logger = pino({
 });
 ```
 
-### 4.8 検証
+### 4.8 Verification
 
 ```bash
 cd rag-system
 pnpm typecheck
-# 期待: エラーなし（src/ がまだ空でも tsconfig が解釈できれば OK）
+# Expected: no errors (even if src/ is empty, as long as tsconfig is valid)
 ```
 
 ---
@@ -495,7 +495,7 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU が無ければ deploy セクションを削除
+    # Remove deploy section if no GPU is available
     deploy:
       resources:
         reservations:
@@ -506,7 +506,7 @@ services:
 
   docling:
     image: quay.io/docling-project/docling-serve-cpu:latest
-    # GPU 版: quay.io/docling-project/docling-serve-cu128:latest
+    # GPU version: quay.io/docling-project/docling-serve-cu128:latest
     container_name: rag-docling
     restart: unless-stopped
     ports:
@@ -524,56 +524,56 @@ volumes:
   docling_cache:
 ```
 
-### 5.2 起動とモデル投入
+### 5.2 Start and Pull Models
 
 ```bash
 cd rag-system
 docker compose up -d
 docker compose ps
 
-# 稼働確認
+# Verify services
 curl -fsS http://127.0.0.1:6333/readyz       # Qdrant
 curl -fsS http://127.0.0.1:11434/api/tags    # Ollama
 curl -fsS http://127.0.0.1:5001/health       # Docling Serve
 
-# Ollama にモデル投入
+# Pull models into Ollama
 docker exec rag-ollama ollama pull qwen2.5:7b-instruct
 docker exec rag-ollama ollama pull bge-m3
 docker exec rag-ollama ollama list
 ```
 
-### 5.3 検証
+### 5.3 Verification
 
 ```bash
 curl -fsS http://127.0.0.1:6333/readyz
-# 期待: 200 OK + ステータス JSON
+# Expected: 200 OK + status JSON
 
 curl -fsS -X POST http://127.0.0.1:11434/api/embed \
-  -d '{"model":"bge-m3","input":"日本語テスト"}' | jq '.embeddings[0] | length'
-# 期待: 1024
+  -d '{"model":"bge-m3","input":"test text"}' | jq '.embeddings[0] | length'
+# Expected: 1024
 ```
 
-### 5.4 llama.cpp 副系統（任意）
+### 5.4 llama.cpp Alternative (Optional)
 
-llama.cpp の `llama-server` を 2 ポートで起動（GGUF モデルを別途取得済の前提）:
+Start `llama-server` on two ports (requires pre-downloaded GGUF models):
 
 ```bash
-# 埋め込み (port 8080)
+# Embeddings (port 8080)
 llama-server -m models/bge-m3-Q5_K_M.gguf --port 8080 --embeddings &
 
 # LLM (port 8081)
 llama-server -m models/qwen2.5-7b-instruct-Q5_K_M.gguf --port 8081 -c 8192 &
 ```
 
-両者とも OpenAI 互換 (`/v1/embeddings`, `/v1/chat/completions`) を提供するため、`.env` の `RAG_BACKEND=llamacpp` で切り替えるだけで本ガイドのコードがそのまま動く。
+Both provide OpenAI-compatible APIs (`/v1/embeddings`, `/v1/chat/completions`), so switching `.env` to `RAG_BACKEND=llamacpp` is all that's needed.
 
 ---
 
-## 6. Phase 2: ドキュメント変換（PDF / 画像 / SVG / drawio / Markdown / テキスト / Web）
+## 6. Phase 2: Document Conversion (PDF / Image / SVG / drawio / Markdown / Text / Web)
 
-### 6.1 変換ディスパッチ（`src/ingest/index.ts`）
+### 6.1 Conversion Dispatch (`src/ingest/index.ts`)
 
-入力は **ローカルファイルパス** または **URL（`http://` / `https://`）** を許容する。`.urls` 拡張子のテキストファイルを「URL リスト」として扱い、行ごとに展開する経路も用意する。
+Input accepts **local file paths** or **URLs (`http://` / `https://`)**. Files with the `.urls` extension are treated as URL lists, expanded line by line.
 
 ```ts
 import { extname } from 'node:path';
@@ -615,7 +615,7 @@ export async function convertAny(input: string): Promise<ConvertedDoc> {
 }
 ```
 
-### 6.2 PDF / 画像（Docling Serve、参照ガイド継承）
+### 6.2 PDF / Image (Docling Serve, inherited from reference guide)
 
 `src/ingest/pdf.ts`:
 
@@ -658,7 +658,7 @@ export async function convertPdf(filePath: string): Promise<ConvertedDoc> {
 }
 ```
 
-### 6.3 SVG 取込（**新規**）
+### 6.3 SVG Ingestion (**New**)
 
 `src/ingest/svg.ts`:
 
@@ -728,8 +728,8 @@ export async function convertSvg(filePath: string): Promise<ConvertedDoc> {
   const acc: SvgTextElement[] = [];
   walk(root, acc);
 
-  // .drawio.svg は <svg content="..."> に mxGraph XML が埋め込まれている場合あり
-  // → drawio.ts と共用するためここでも展開を試みる
+  // .drawio.svg may have mxGraph XML embedded in <svg content="...">
+  // -> Try to extract using drawio.ts's extractMxCells for shared handling
   const svgRoot = (root as Record<string, unknown>).svg as Record<string, unknown> | undefined;
   const embeddedContent = svgRoot?.content;
   let drawioMd = '';
@@ -754,7 +754,7 @@ export async function convertSvg(filePath: string): Promise<ConvertedDoc> {
 }
 ```
 
-### 6.4 drawio 取込（**新規**）
+### 6.4 drawio Ingestion (**New**)
 
 `src/ingest/drawio.ts`:
 
@@ -766,16 +766,16 @@ import pako from 'pako';
 import type { ConvertedDoc } from './index.js';
 
 /**
- * drawio の <diagram> 要素の中身は次のいずれか:
- *   1) 平文 mxGraph XML (<mxGraphModel>...</mxGraphModel>)
- *   2) deflate + base64 でエンコードされた URL-encoded mxGraph XML
+ * The content of a drawio <diagram> element is one of:
+ *   1) Plain text mxGraph XML (<mxGraphModel>...</mxGraphModel>)
+ *   2) Deflate + base64 encoded URL-encoded mxGraph XML
  */
 export function decompressDiagram(content: string): string {
   const trimmed = content.trim();
   if (trimmed.startsWith('<mxGraphModel') || trimmed.startsWith('<?xml')) {
     return trimmed;
   }
-  // base64 → bytes → inflateRaw → URL decode
+  // base64 -> bytes -> inflateRaw -> URL decode
   const buf = Buffer.from(trimmed, 'base64');
   const inflated = pako.inflateRaw(buf, { to: 'string' });
   return decodeURIComponent(inflated);
@@ -826,7 +826,7 @@ export async function convertDrawio(filePath: string): Promise<ConvertedDoc> {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
   const root = parser.parse(xml);
 
-  // 多段ネスト: mxfile > diagram[*] > (compressed | mxGraphModel)
+  // Multi-level nesting: mxfile > diagram[*] > (compressed | mxGraphModel)
   const diagrams = collectDiagrams(root);
   const lines: string[] = [`# drawio: ${basename(filePath)}`, ''];
   for (const [i, d] of diagrams.entries()) {
@@ -855,7 +855,7 @@ function collectDiagrams(node: unknown): unknown[] {
 }
 ```
 
-### 6.5 Markdown / プレーンテキスト取込（**新規**）
+### 6.5 Markdown / Plain Text Ingestion (**New**)
 
 `src/ingest/markdown.ts`:
 
@@ -866,7 +866,7 @@ import matter from 'gray-matter';
 import type { ConvertedDoc } from './index.js';
 
 /**
- * Markdown はそのまま投入する。frontmatter は metadata に分離。
+ * Markdown is ingested as-is. Frontmatter is separated into metadata.
  */
 export async function convertMarkdown(filePath: string): Promise<ConvertedDoc> {
   const raw = await readFile(filePath, 'utf-8');
@@ -883,10 +883,10 @@ export async function convertMarkdown(filePath: string): Promise<ConvertedDoc> {
 }
 
 /**
- * プレーンテキスト / .log / .rst は最低限の整形だけ行い Markdown 同等に扱う。
- * - BOM 除去
- * - CRLF → LF
- * - 連続空行を 1 行に圧縮（過剰チャンク化防止）
+ * Plain text / .log / .rst receives minimal formatting and is treated like Markdown.
+ * - BOM removal
+ * - CRLF -> LF
+ * - Compress consecutive blank lines (prevents excessive chunking)
  */
 export async function convertText(filePath: string): Promise<ConvertedDoc> {
   let raw = await readFile(filePath, 'utf-8');
@@ -900,9 +900,9 @@ export async function convertText(filePath: string): Promise<ConvertedDoc> {
 }
 ```
 
-### 6.6 Web (URL) 取込（**新規**）
+### 6.6 Web (URL) Ingestion (**New**)
 
-Docling Serve は **URL を直接受け取る** `/v1alpha/convert/source` エンドポイントを備えており、HTML / PDF / 画像のいずれの URL もサーバ側で取得 + 解析 + Markdown 化する。Node 側で fetch + cheerio + html-to-md を組む必要は無い。
+Docling Serve provides a `/v1alpha/convert/source` endpoint that directly accepts URLs. It fetches, parses, and converts HTML/PDF/images on the server side. No need to build a fetch + cheerio + html-to-md pipeline in Node.
 
 `src/ingest/web.ts`:
 
@@ -918,10 +918,10 @@ interface DoclingSourceResponse {
 }
 
 /**
- * URL を Docling Serve に渡し Markdown を取得する。
- * - HTTP / HTTPS のみ許可
- * - HTML / PDF / 画像のいずれでも 1 経路で扱える
- * - OCR は HTML では発火しないが、PDF / 画像 URL では自動で発火
+ * Pass a URL to Docling Serve to get Markdown.
+ * - Only HTTP/HTTPS URLs are allowed
+ * - HTML/PDF/images are all handled through a single path
+ * - OCR does not trigger for HTML but does for PDF/image URLs automatically
  */
 export async function convertWeb(url: string): Promise<ConvertedDoc> {
   if (!/^https?:\/\//i.test(url)) throw new Error(`Not an HTTP(S) URL: ${url}`);
@@ -970,8 +970,8 @@ export async function convertWeb(url: string): Promise<ConvertedDoc> {
 }
 
 /**
- * `.urls` 拡張子のテキストファイル（行ごと 1 URL、`#` で始まる行はコメント）を読み URL 配列を返す。
- * `expandPath` で展開され、各 URL は `convertWeb` で個別取込される。
+ * Reads a `.urls` text file (one URL per line, `#` lines are comments) and returns a URL array.
+ * Expanded by `expandPath`, each URL is ingested individually via `convertWeb`.
  */
 export async function readUrlList(filePath: string): Promise<string[]> {
   const { readFile } = await import('node:fs/promises');
@@ -980,65 +980,65 @@ export async function readUrlList(filePath: string): Promise<string[]> {
 }
 ```
 
-#### Web 取込の留意点
+#### Web Ingestion Notes
 
-- **対象範囲**: 単一 URL を 1 ドキュメントとして取込む。サイト全体のクロール（深さ N の再帰巡回）はスコープ外。クロールが必要なら `wget --mirror` 等で事前にローカルへ落としてからファイル取込する運用を推奨。
-- **認証**: 認証付き URL は Docling Serve から直接アクセス不可。Cookie ヘッダ送信が必要なら `wget` などで先にダウンロード → ファイル取込する。
-- **大量 URL**: `.urls` ファイル（行ごと 1 URL）を `pnpm rag ingest path/to/list.urls` で一括投入できる（後述 §13）。
-- **更新**: 同 URL を再取込すると新しいチャンクが追加される（重複）。再取込時は `pnpm rag reindex` で collection をクリアしてから再投入するか、`payload.url` をキーに古い point を削除する運用を推奨。
+- **Scope**: A single URL is ingested as one document. Site-wide crawling (recursive N-depth traversal) is out of scope. Use `wget --mirror` or similar to download locally before ingesting.
+- **Authentication**: Authenticated URLs cannot be accessed directly by Docling Serve. If Cookie headers are needed, download via `wget` first, then ingest the local file.
+- **Bulk URLs**: A `.urls` file (one URL per line) can be bulk-ingested via `pnpm rag ingest path/to/list.urls` (see Phase 9).
+- **Updates**: Re-ingesting the same URL adds new chunks (duplicates). Before re-ingesting, use `pnpm rag reindex` to clear the collection, or implement a deduplication strategy using `payload.url` as a key.
 
-### 6.7 検証
+### 6.7 Verification
 
 ```bash
-# SVG: <text>Hello</text> を含むサンプル
+# SVG: <text>Hello</text> sample
 cat > rag-system/data/svg/hello.svg <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg"><text x="10" y="20">こんにちは世界</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg"><text x="10" y="20">Hello World</text></svg>
 EOF
 pnpm tsx -e "import('./src/ingest/svg.js').then(m => m.convertSvg('data/svg/hello.svg').then(r => console.log(r.markdown)))"
-# 期待: "- [text] (x=10, y=20) こんにちは世界" を含む Markdown
+# Expected: Markdown containing "- [text] (x=10, y=20) Hello World"
 
-# drawio: 圧縮ありのファイルを drawio Web で出力したものを配置して動作確認
+# drawio: place a compressed drawio file exported from drawio Web
 ls rag-system/data/drawio/*.drawio
 pnpm tsx -e "import('./src/ingest/drawio.js').then(m => m.convertDrawio('data/drawio/sample.drawio').then(r => console.log(r.markdown.slice(0, 500))))"
-# 期待: "# drawio: sample.drawio" + "## Diagram 1" + ラベル一覧
+# Expected: "# drawio: sample.drawio" + "## Diagram 1" + label list
 
-# Markdown: 直接読込
+# Markdown: direct read
 cat > rag-system/data/md/note.md <<'EOF'
 ---
-title: メモ
+title: Note
 ---
-# 概要
+# Summary
 
-本書はサンプルメモ。
+This is a sample memo document.
 EOF
 pnpm tsx -e "import('./src/ingest/markdown.js').then(m => m.convertMarkdown('data/md/note.md').then(r => console.log(JSON.stringify(r, null, 2))))"
-# 期待: metadata.frontmatter.title === 'メモ'、markdown 本文に "# 概要" を含む
+# Expected: metadata.frontmatter.title === 'Note', markdown body contains "# Summary"
 
-# プレーンテキスト
+# Plain text
 cat > rag-system/data/txt/changelog.txt <<'EOF'
-2026-05-06: 取込パイプラインを追加。
-2026-05-07: web 取込対応。
+2026-05-06: Added ingestion pipeline.
+2026-05-07: Added web ingestion support.
 EOF
 pnpm tsx -e "import('./src/ingest/markdown.js').then(m => m.convertText('data/txt/changelog.txt').then(r => console.log(r.markdown)))"
-# 期待: "# changelog.txt" + 本文 2 行
+# Expected: "# changelog.txt" + 2 lines of body text
 
-# Web URL（Docling Serve 起動済が前提）
+# Web URL (requires Docling Serve running)
 pnpm tsx -e "import('./src/ingest/web.js').then(m => m.convertWeb('https://example.com').then(r => console.log(r.markdown.slice(0, 200))))"
-# 期待: "Example Domain" など example.com の本文を Markdown として取得
+# Expected: "Example Domain" etc. from example.com as Markdown
 
-# URL リスト
+# URL list
 cat > rag-system/data/url/refs.urls <<'EOF'
-# 参考リンク集（コメント行は無視される）
+# Reference links (comment lines are ignored)
 https://example.com
 https://qdrant.tech/documentation/
 EOF
 pnpm tsx -e "import('./src/ingest/web.js').then(async m => console.log(await m.readUrlList('data/url/refs.urls')))"
-# 期待: ['https://example.com', 'https://qdrant.tech/documentation/']
+# Expected: ['https://example.com', 'https://qdrant.tech/documentation/']
 ```
 
 ---
 
-## 7. Phase 3: チャンキング（日本語強化）
+## 7. Phase 3: Chunking (Japanese-Enhanced)
 
 ### 7.1 `src/chunk/japanese.ts`
 
@@ -1061,13 +1061,13 @@ export interface Chunk {
 }
 
 const JP_SEPARATORS = [
-  '\n\n',  // パラグラフ
-  '\n',    // 行
-  '。', '！', '？',  // 日本語句点
-  '. ', '! ', '? ', // 英文末
-  '、',                // 日本語読点（最終手段）
-  ' ',                 // 半角空白
-  '',                  // 文字単位
+  '\n\n',  // Paragraph
+  '\n',    // Line
+  '。', '！', '？',  // Japanese sentence-ending punctuation
+  '. ', '! ', '? ', // English sentence endings
+  '、',                // Japanese comma (last resort)
+  ' ',                 // Space
+  '',                  // Character level
 ];
 
 export async function chunkJapanese(
@@ -1076,16 +1076,16 @@ export async function chunkJapanese(
 ): Promise<Chunk[]> {
   const { content, data: frontmatter } = matter(markdown);
 
-  // 見出し構造で粗く分割
+  // Coarse split by heading structure
   const mdSplitter = new MarkdownTextSplitter({
     chunkSize: config.CHUNK_SIZE * 4,
     chunkOverlap: 0,
   });
   const sections = await mdSplitter.splitText(content);
 
-  // 日本語句読点優先で細粒度分割
+  // Fine-grained split with Japanese punctuation priority
   const refine = new RecursiveCharacterTextSplitter({
-    chunkSize: config.CHUNK_SIZE * 3,        // 1 トークン ≒ 2-3 文字（bge-m3 日本語）
+    chunkSize: config.CHUNK_SIZE * 3,        // 1 token ~= 2-3 characters (bge-m3 Japanese)
     chunkOverlap: config.CHUNK_OVERLAP * 3,
     separators: JP_SEPARATORS,
   });
@@ -1098,7 +1098,7 @@ export async function chunkJapanese(
     const parts = await refine.splitText(section);
     for (const body of parts) {
       const text = contextualize(headings, body);
-      if (text.trim().length < 8) continue; // 過小チャンク除外
+      if (text.trim().length < 8) continue; // Skip very small chunks
       chunks.push({
         text,
         metadata: {
@@ -1128,23 +1128,23 @@ function contextualize(headings: string[], body: string): string {
 }
 ```
 
-### 7.2 検証
+### 7.2 Verification
 
 ```bash
 pnpm tsx -e "
 import('./src/chunk/japanese.js').then(async m => {
-  const chunks = await m.chunkJapanese('test.md', '# 概要\n\n本システムは RAG パイプラインです。日本語ドキュメントを取り込みます。検索とリランクで上位を返します。');
+  const chunks = await m.chunkJapanese('test.md', '# Summary\n\nThis system is a RAG pipeline. It ingests Japanese documents. Search and reranking return top results.');
   console.log('chunks:', chunks.length);
   for (const c of chunks) console.log('-', c.text.slice(0, 80));
 })"
-# 期待: 1〜3 chunks、本文先頭に "# 概要" が付与
+# Expected: 1-3 chunks, body starts with "# Summary" heading prefix
 ```
 
 ---
 
-## 8. Phase 4: 埋め込み生成（Ollama 主 / llama.cpp 副）
+## 8. Phase 4: Embedding Generation (Ollama Primary / llama.cpp Alternative)
 
-### 8.1 ディスパッチ（`src/embed/index.ts`）
+### 8.1 Dispatch (`src/embed/index.ts`)
 
 ```ts
 import { config } from '../config.js';
@@ -1162,7 +1162,7 @@ export async function embedOne(text: string): Promise<number[]> {
 }
 ```
 
-### 8.2 Ollama 経路（`src/embed/ollama.ts`）
+### 8.2 Ollama Path (`src/embed/ollama.ts`)
 
 ```ts
 import { Ollama } from 'ollama';
@@ -1191,7 +1191,7 @@ export async function embedOllama(texts: string[], batchSize = 16): Promise<numb
 }
 ```
 
-### 8.3 llama.cpp 経路（`src/embed/llamacpp.ts`、OpenAI 互換）
+### 8.3 llama.cpp Path (`src/embed/llamacpp.ts`, OpenAI-compatible)
 
 ```ts
 import { config } from '../config.js';
@@ -1223,27 +1223,27 @@ export async function embedLlamaCpp(texts: string[], batchSize = 8): Promise<num
 }
 ```
 
-### 8.4 検証
+### 8.4 Verification
 
 ```bash
 RAG_BACKEND=ollama pnpm tsx -e "
 import('./src/embed/index.js').then(async m => {
-  const v = await m.embedOne('RAG パイプラインの構成要素は何ですか？');
+  const v = await m.embedOne('What are the components of a RAG pipeline?');
   console.log('dim:', v.length);
 })"
-# 期待: dim: 1024
+# Expected: dim: 1024
 
-# llama.cpp 経路（llama-server 起動時のみ）
+# llama.cpp path (only when llama-server is running)
 RAG_BACKEND=llamacpp pnpm tsx -e "
 import('./src/embed/index.js').then(async m => {
-  const v = await m.embedOne('テスト');
+  const v = await m.embedOne('test');
   console.log('dim:', v.length);
 })"
 ```
 
 ---
 
-## 9. Phase 5: Qdrant 投入
+## 9. Phase 5: Qdrant Ingestion
 
 ### 9.1 `src/search/qdrant.ts`
 
@@ -1315,7 +1315,7 @@ export async function denseSearch(
 }
 ```
 
-### 9.2 取込パイプライン（`src/pipeline/ingest.ts`）
+### 9.2 Ingestion Pipeline (`src/pipeline/ingest.ts`)
 
 ```ts
 import { randomUUID } from 'node:crypto';
@@ -1380,11 +1380,11 @@ export async function ingestPaths(inputs: string[]): Promise<IngestStats> {
 }
 
 /**
- * 入力 1 件を ingest 対象に展開する:
- *   - URL (`http(s)://...`)         → そのまま 1 件
- *   - `.urls` ファイル              → 行ごと 1 URL に展開
- *   - 単一ファイル                  → そのまま 1 件
- *   - ディレクトリ                  → 配下の対応拡張子を再帰列挙
+ * Expand a single input into ingestion targets:
+ *   - URL (http(s)://...)          -> single item
+ *   - .urls file                   -> expanded to one URL per line
+ *   - Single file                  -> single item
+ *   - Directory                   -> recursively enumerate matching extensions
  */
 export async function expandPath(target: string): Promise<string[]> {
   if (/^https?:\/\//i.test(target)) return [target];
@@ -1421,23 +1421,23 @@ export async function expandPath(target: string): Promise<string[]> {
 }
 ```
 
-### 9.3 検証
+### 9.3 Verification
 
 ```bash
 curl -fsS http://127.0.0.1:6333/collections | jq
-# 期待: 取込前は空、取込後は { "collections": [{"name":"rag_documents"}] }
+# Expected: before ingestion, empty; after ingestion, { "collections": [{"name":"rag_documents"}] }
 
-# 簡単な PDF / SVG を data/ に置いて
+# Place a simple PDF / SVG in data/ and ingest
 pnpm rag ingest data/svg/hello.svg
 curl -fsS http://127.0.0.1:6333/collections/rag_documents | jq '.result.points_count'
-# 期待: 1 以上
+# Expected: 1 or more
 ```
 
 ---
 
-## 10. Phase 6: 検索 + リランキング
+## 10. Phase 6: Search + Reranking
 
-### 10.1 リランカ（`src/search/rerank.ts`）
+### 10.1 Reranker (`src/search/rerank.ts`)
 
 ```ts
 import {
@@ -1478,7 +1478,7 @@ export async function rerank(
 }
 ```
 
-### 10.2 検索パイプライン（`src/pipeline/retrieve.ts`）
+### 10.2 Search Pipeline (`src/pipeline/retrieve.ts`)
 
 ```ts
 import { config } from '../config.js';
@@ -1525,18 +1525,18 @@ export async function retrieve(
 }
 ```
 
-### 10.3 検証
+### 10.3 Verification
 
 ```bash
-pnpm rag search "RAG パイプラインの構成要素は？" --top-k 10 --top-n 3
-# 期待: 3 件の結果（rerankScore 降順）+ 出典 path / heading
+pnpm rag search "What are the components of a RAG pipeline?" --top-k 10 --top-n 3
+# Expected: 3 results (sorted by rerankScore) + source path / heading
 ```
 
 ---
 
-## 11. Phase 7: ローカル LLM 応答生成
+## 11. Phase 7: Local LLM Response Generation
 
-### 11.1 ディスパッチ（`src/llm/index.ts`）
+### 11.1 Dispatch (`src/llm/index.ts`)
 
 ```ts
 import { config } from '../config.js';
@@ -1544,19 +1544,19 @@ import { generateOllama, streamOllama } from './ollama.js';
 import { generateLlamaCpp, streamLlamaCpp } from './llamacpp.js';
 import type { RetrievedDoc } from '../pipeline/retrieve.js';
 
-const SYSTEM_PROMPT = `あなたは提供されたドキュメントに基づいて正確に回答するアシスタントです。
-以下を厳守:
-1. 「参考情報」のみに基づいて回答する。想像で補わない。
-2. 答えがない場合は「提供された情報では回答できません」と明言する。
-3. 末尾に [1][2] 形式で出典番号を列挙する。
-4. 数値・日付は原文どおりに引用する。`;
+const SYSTEM_PROMPT = `You are an assistant that answers accurately based on the provided documents.
+Strictly follow these rules:
+1. Answer based ONLY on the "Reference Information" provided. Do not supplement with imagination.
+2. If the answer is not available, explicitly state "The provided information does not contain an answer."
+3. List source citations at the end in [1][2] format.
+4. Quote numbers and dates exactly as they appear in the original text.`;
 
 export function buildUserMessage(question: string, docs: RetrievedDoc[]): string {
   const ctx = docs.map((d, i) => {
     const path = [d.source, ...d.headings].join(' > ');
-    return `[${i + 1}] 出典: ${path}\n${d.text}`;
+    return `[${i + 1}] Source: ${path}\n${d.text}`;
   }).join('\n\n---\n\n');
-  return `【質問】\n${question}\n\n【参考情報】\n${ctx}\n\n上記に基づいて回答してください。`;
+  return `[Question]\n${question}\n\n[Reference Information]\n${ctx}\n\nPlease answer based on the above information.`;
 }
 
 export async function generate(question: string, docs: RetrievedDoc[]): Promise<string> {
@@ -1570,7 +1570,7 @@ export function generateStream(question: string, docs: RetrievedDoc[]): AsyncGen
 }
 ```
 
-### 11.2 Ollama 経路（`src/llm/ollama.ts`）
+### 11.2 Ollama Path (`src/llm/ollama.ts`)
 
 ```ts
 import { Ollama } from 'ollama';
@@ -1601,7 +1601,7 @@ export async function* streamOllama(system: string, user: string): AsyncGenerato
 }
 ```
 
-### 11.3 llama.cpp 経路（`src/llm/llamacpp.ts`、OpenAI 互換）
+### 11.3 llama.cpp Path (`src/llm/llamacpp.ts`, OpenAI-compatible)
 
 ```ts
 import { config } from '../config.js';
@@ -1658,16 +1658,16 @@ export async function* streamLlamaCpp(system: string, user: string): AsyncGenera
 }
 ```
 
-### 11.4 検証
+### 11.4 Verification
 
 ```bash
-pnpm rag search "RAG パイプラインの構成要素は？"
-# 期待: 取込済ドキュメントに基づいた日本語応答 + 出典 [1][2]...
+pnpm rag search "What are the components of a RAG pipeline?"
+# Expected: Japanese response based on ingested documents + sources [1][2]...
 ```
 
 ---
 
-## 12. Phase 8: HTTP API（Hono）
+## 12. Phase 8: HTTP API (Hono)
 
 ### 12.1 `src/api/server.ts`
 
@@ -1697,7 +1697,7 @@ app.use('*', timeout(15 * 60 * 1000));
 
 app.get('/health', c => c.json({ status: 'ok' }));
 
-// ── /status: 各サービスのヘルスと collection 統計 ──
+// -- /status: Service health and collection statistics --
 app.get('/status', async c => {
   const checks = await Promise.allSettled([
     fetch(`${config.QDRANT_URL}/readyz`).then(r => r.ok),
@@ -1715,12 +1715,12 @@ app.get('/status', async c => {
   });
 });
 
-// ── /ingest: パス / URL 配列を取込 ──
-// paths は以下のいずれも混在可:
-//   - ローカルファイルパス (PDF / 画像 / SVG / drawio / Markdown / テキスト)
-//   - ローカルディレクトリ（再帰列挙）
+// -- /ingest: Ingest path/URL array --
+// paths accepts any mix of:
+//   - Local file path (PDF / image / SVG / drawio / Markdown / text)
+//   - Local directory (recursive enumeration)
 //   - URL (http://... / https://...)
-//   - .urls ファイル（行ごとに URL）
+//   - .urls file (one URL per line)
 const IngestSchema = z.object({
   paths: z.array(z.string().min(1)).min(1),
   collection: z.string().optional(),
@@ -1734,7 +1734,7 @@ app.post('/ingest', zValidator('json', IngestSchema), async c => {
   return c.json({ ...stats, total: expanded.length });
 });
 
-// ── /ingest/upload: multipart ファイルアップロード ──
+// -- /ingest/upload: Multipart file upload --
 app.post('/ingest/upload', async c => {
   const body = await c.req.parseBody();
   const file = body['file'];
@@ -1746,7 +1746,7 @@ app.post('/ingest/upload', async c => {
   return c.json({ path: savedPath, ...r });
 });
 
-// ── /search: 検索 + 生成 ──
+// -- /search: Search + generation --
 const SearchSchema = z.object({
   query: z.string().min(1).max(2000),
   top_k: z.number().int().min(1).max(100).optional(),
@@ -1762,7 +1762,7 @@ app.post('/search', zValidator('json', SearchSchema), async c => {
   return c.json({ answer, sources: docs });
 });
 
-// ── /search/stream: SSE 風ストリーム ──
+// -- /search/stream: SSE-style stream --
 app.post('/search/stream', zValidator('json', SearchSchema), async c => {
   const { query, top_k, top_n, rerank } = c.req.valid('json');
   const docs = await retrieve(query, { topK: top_k, topN: top_n, rerank });
@@ -1773,7 +1773,7 @@ app.post('/search/stream', zValidator('json', SearchSchema), async c => {
   });
 });
 
-// ── /reindex: collection 再作成 ──
+// -- /reindex: Recreate collection --
 app.post('/reindex', async c => {
   const client = getQdrantClient();
   await ensureCollection(client, true);
@@ -1791,33 +1791,33 @@ serve({ fetch: app.fetch, port: config.RAG_API_PORT, hostname: config.RAG_API_HO
 export { app };
 ```
 
-### 12.2 検証
+### 12.2 Verification
 
 ```bash
-# サーバ起動
+# Start server
 pnpm serve &
 sleep 2
 
 curl -fsS http://127.0.0.1:7777/health
-# 期待: {"status":"ok"}
+# Expected: {"status":"ok"}
 
 curl -fsS http://127.0.0.1:7777/status | jq
-# 期待: { qdrant:"ok", ollama:"ok", docling:"ok", backend:"ollama", collections:[...] }
+# Expected: { qdrant:"ok", ollama:"ok", docling:"ok", backend:"ollama", collections:[...] }
 
 curl -fsS -X POST http://127.0.0.1:7777/ingest \
   -H 'content-type: application/json' \
   -d '{"paths":["data/svg"]}'
-# 期待: {"ingested":N, "chunks":M, "errors":0, "total":N}
+# Expected: {"ingested":N, "chunks":M, "errors":0, "total":N}
 
 curl -fsS -X POST http://127.0.0.1:7777/search \
   -H 'content-type: application/json' \
-  -d '{"query":"RAG パイプラインの構成要素は？","top_k":10,"top_n":3}'
-# 期待: { answer: "...", sources: [...] }
+  -d '{"query":"What are the components of a RAG pipeline?","top_k":10,"top_n":3}'
+# Expected: { answer: "...", sources: [...] }
 ```
 
 ---
 
-## 13. Phase 9: ユーザ CLI（`pnpm rag`）
+## 13. Phase 9: User CLI (`pnpm rag`)
 
 ### 13.1 `src/cli/index.ts`
 
@@ -1830,11 +1830,11 @@ import { ensureCollection, getQdrantClient } from '../search/qdrant.js';
 import { config } from '../config.js';
 
 const program = new Command();
-program.name('local-rag').description('スタンドアロン RAG CLI').version('0.1.0');
+program.name('local-rag').description('Standalone RAG CLI').version('0.1.0');
 
 program
   .command('ingest <target>')
-  .description('ファイル / ディレクトリ / URL / .urls ファイル を取込（混在可）')
+  .description('Ingest file / directory / URL / .urls file (mixed)')
   .action(async (target: string) => {
     const expanded = await expandPath(target);
     if (expanded.length === 1) {
@@ -1848,25 +1848,25 @@ program
 
 program
   .command('search <query>')
-  .description('検索 + LLM 応答')
-  .option('-k, --top-k <n>', 'retrieve 候補数', '20')
-  .option('-n, --top-n <n>', 'rerank 後の数', '5')
-  .option('--no-rerank', 'リランク無効化')
-  .option('--no-generate', 'LLM 応答生成を無効化（検索結果のみ）')
+  .description('Search + LLM response')
+  .option('-k, --top-k <n>', 'Number of retrieval candidates', '20')
+  .option('-n, --top-n <n>', 'Number of results after reranking', '5')
+  .option('--no-rerank', 'Disable reranking')
+  .option('--no-generate', 'Disable LLM response generation (sources only)')
   .action(async (query: string, opts: { topK: string; topN: string; rerank: boolean; generate: boolean }) => {
     const docs = await retrieve(query, { topK: Number(opts.topK), topN: Number(opts.topN), rerank: opts.rerank });
     if (opts.generate) {
       const answer = await generate(query, docs);
-      console.log('=== 回答 ===');
+      console.log('=== Answer ===');
       console.log(answer);
     }
-    console.log('\n=== 出典 ===');
+    console.log('\n=== Sources ===');
     docs.forEach((d, i) => console.log(`[${i + 1}] ${d.source}${d.headings.length ? ' > ' + d.headings.join(' > ') : ''} (rerank=${d.rerankScore?.toFixed(3) ?? 'n/a'})`));
   });
 
 program
   .command('status')
-  .description('各サービスのヘルスと collection 統計')
+  .description('Service health and collection statistics')
   .action(async () => {
     const probes = await Promise.allSettled([
       fetch(`${config.QDRANT_URL}/readyz`),
@@ -1886,7 +1886,7 @@ program
 
 program
   .command('reindex')
-  .description('collection を削除して再作成')
+  .description('Delete and recreate collection')
   .action(async () => {
     const client = getQdrantClient();
     await ensureCollection(client, true);
@@ -1895,8 +1895,8 @@ program
 
 program
   .command('serve')
-  .description('Hono HTTP API を起動（127.0.0.1:7777）')
-  .option('-p, --port <n>', 'ポート上書き')
+  .description('Start Hono HTTP API (127.0.0.1:7777)')
+  .option('-p, --port <n>', 'Port override')
   .action(async (opts: { port?: string }) => {
     if (opts.port) process.env.RAG_API_PORT = opts.port;
     await import('../api/server.js');
@@ -1905,94 +1905,94 @@ program
 program.parseAsync(process.argv).catch(e => { console.error(e); process.exit(1); });
 ```
 
-### 13.2 検証
+### 13.2 Verification
 
 ```bash
 pnpm rag --help
-# 期待: ingest / search / status / reindex / serve サブコマンドが表示
+# Expected: ingest / search / status / reindex / serve subcommands displayed
 
 pnpm rag status
-# 期待: 各サービスの ok/down と collection 一覧
+# Expected: ok/down for each service and collection list
 
 pnpm rag ingest data/svg/hello.svg
 pnpm rag ingest data/md/note.md            # Markdown
-pnpm rag ingest data/txt/changelog.txt     # プレーンテキスト
-pnpm rag ingest https://example.com         # 単一 URL
-pnpm rag ingest data/url/refs.urls          # URL リスト（行ごと 1 URL）
-pnpm rag ingest ./docs                     # ディレクトリ再帰（混在 OK）
-pnpm rag search "RAG パイプラインの構成要素は？" --top-k 10 --top-n 3
+pnpm rag ingest data/txt/changelog.txt     # Plain text
+pnpm rag ingest https://example.com         # Single URL
+pnpm rag ingest data/url/refs.urls          # URL list (one URL per line)
+pnpm rag ingest ./docs                     # Recursive directory (mixed OK)
+pnpm rag search "What are the components of a RAG pipeline?" --top-k 10 --top-n 3
 pnpm rag reindex
 ```
 
 ---
 
-## 14. Phase 10: 外部アプリ / クライアントからの利用例
+## 14. Phase 10: External Application / Client Usage Examples
 
-本 RAG サブシステムは Hono REST API（`127.0.0.1:7777`）を公開しているため、curl / fetch / 任意言語の HTTP クライアントから自由に呼び出せる。本章は代表的なクライアント形態の例を示す。
+The RAG subsystem exposes a Hono REST API (`127.0.0.1:7777`), so it can be called from curl / fetch / any HTTP client in any language. This section shows representative client examples.
 
-### 14.1 シェルからの curl 呼び出し
+### 14.1 Shell curl Examples
 
-#### 取込（`/ingest`）
+#### Ingest (`/ingest`)
 
 ```bash
-# 単一ファイル
+# Single file
 curl -fsS -X POST http://127.0.0.1:7777/ingest \
   -H 'content-type: application/json' \
   -d '{"paths":["./docs/spec.pdf"]}' | jq
 
-# Markdown / テキスト
+# Markdown / text
 curl -fsS -X POST http://127.0.0.1:7777/ingest \
   -H 'content-type: application/json' \
   -d '{"paths":["./README.md","./CHANGELOG.txt"]}' | jq
 
-# Web URL（単発 / 複数 / 混在）
+# Web URL (single / multiple / mixed)
 curl -fsS -X POST http://127.0.0.1:7777/ingest \
   -H 'content-type: application/json' \
   -d '{"paths":["https://qdrant.tech/documentation/","https://docs.docling-project.org/"]}' | jq
 
-# ファイル + ディレクトリ + URL の混在
+# Mixed files + directories + URLs
 curl -fsS -X POST http://127.0.0.1:7777/ingest \
   -H 'content-type: application/json' \
   -d '{"paths":["./docs","./data/url/refs.urls","https://example.com"]}' | jq
 
-# multipart アップロード
+# Multipart upload
 curl -fsS -X POST http://127.0.0.1:7777/ingest/upload \
   -F "file=@./design_rag.md" | jq
 ```
 
-#### 検索（`/search`）
+#### Search (`/search`)
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:7777/search \
   -H 'content-type: application/json' \
-  -d '{"query":"<クエリ>","top_k":20,"top_n":5}' | jq
+  -d '{"query":"<query>","top_k":20,"top_n":5}' | jq
 
-# 出典のみ（LLM 生成スキップ）
+# Sources only (skip LLM generation)
 curl -fsS -X POST http://127.0.0.1:7777/search \
   -H 'content-type: application/json' \
-  -d '{"query":"<クエリ>","top_n":5,"generate":false}' | jq '.sources'
+  -d '{"query":"<query>","top_n":5,"generate":false}' | jq '.sources'
 ```
 
-#### コレクション再構築（`/reindex`）
+#### Collection Rebuild (`/reindex`)
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:7777/reindex | jq
-# 期待: {"collection":"rag_documents","recreated":true}
+# Expected: {"collection":"rag_documents","recreated":true}
 ```
 
-その後 `/ingest` を再実行して再投入する。
+Re-run `/ingest` after reindexing to repopulate.
 
-#### 状態確認（`/status`）
+#### Status Check (`/status`)
 
 ```bash
 curl -fsS http://127.0.0.1:7777/status | jq
-# collections[].points_count などで蓄積量を確認
+# Check collections[].points_count etc. for data volume
 ```
 
-### 14.2 Node.js / TypeScript クライアント例
+### 14.2 Node.js / TypeScript Client Example
 
 ```ts
-// 任意の Node.js プロジェクトから fetch で呼ぶ最小例
+// Minimal example using fetch from any Node.js project
 const RAG = 'http://127.0.0.1:7777';
 
 async function ingest(paths: string[]) {
@@ -2014,45 +2014,45 @@ async function search(query: string, top_k = 20, top_n = 5) {
 }
 
 console.log(await ingest(['./docs', 'https://example.com']));
-console.log(await search('RAG パイプラインの構成は？'));
+console.log(await search('What is the RAG pipeline structure?'));
 ```
 
-### 14.3 Python クライアント例
+### 14.3 Python Client Example
 
 ```python
 import requests
 
 RAG = 'http://127.0.0.1:7777'
 
-# 取込
+# Ingest
 r = requests.post(f'{RAG}/ingest', json={'paths': ['./docs', 'https://example.com']})
 print(r.json())
 
-# 検索
-r = requests.post(f'{RAG}/search', json={'query': 'RAG パイプラインの構成は？', 'top_k': 20, 'top_n': 5})
+# Search
+r = requests.post(f'{RAG}/search', json={'query': 'What is the RAG pipeline structure?', 'top_k': 20, 'top_n': 5})
 data = r.json()
 print(data['answer'])
 for s in data['sources']:
     print(f"- {s['source']} (score={s.get('rerankScore', s['score']):.3f})")
 ```
 
-### 14.4 起動 / 停止 ランブック
+### 14.4 Start / Stop Runbook
 
 ```bash
-# 起動
+# Start
 cd rag-system
 docker compose up -d
-pnpm serve &       # tsx で起動。pm2 や systemd でデーモン化推奨
+pnpm serve &       # Start via tsx. Consider daemonizing with pm2 or systemd
 
-# 停止
+# Stop
 kill %1            # pnpm serve
 docker compose stop
 
-# 状態確認
+# Status check
 curl -fsS http://127.0.0.1:7777/status | jq
 ```
 
-`pnpm rag serve` を `~/.config/systemd/user/local-rag.service` に登録する例:
+Example systemd unit file for `pnpm rag serve`:
 
 ```ini
 [Unit]
@@ -2074,150 +2074,150 @@ systemctl --user daemon-reload
 systemctl --user enable --now local-rag.service
 ```
 
-### 14.5 検証
+### 14.5 Verification
 
-API が外部から正しく利用できることを確認:
+Verify the API is accessible from external clients:
 
 ```bash
-# 1. サーバが起動済
+# 1. Server is running
 curl -fsS http://127.0.0.1:7777/health
-# 期待: {"status":"ok"}
+# Expected: {"status":"ok"}
 
-# 2. 取込と検索のラウンドトリップ
+# 2. Ingest and search round trip
 curl -fsS -X POST http://127.0.0.1:7777/ingest \
   -H 'content-type: application/json' \
   -d '{"paths":["./README.md"]}' | jq
 curl -fsS -X POST http://127.0.0.1:7777/search \
   -H 'content-type: application/json' \
-  -d '{"query":"このプロジェクトの概要は？","top_n":3}' | jq
+  -d '{"query":"What is the overview of this project?","top_n":3}' | jq
 ```
 
-> **ネットワーク公開時の注意**: 既定では `127.0.0.1` バインドのため同一ホストからのみアクセス可能。LAN / 外部公開する場合は §16.3 セキュリティ留意点に従い、reverse proxy + 認証を必ず併用すること。
+> **Network exposure note**: The default `127.0.0.1` binding allows access only from the same host. For LAN/public exposure, follow the security guidelines in Section 16.3 and always use a reverse proxy with authentication.
 
 ---
 
-## 15. Phase 11: 運用・トラブルシューティング・評価
+## 15. Phase 11: Operations / Troubleshooting / Evaluation
 
-### 15.1 ログ
+### 15.1 Logging
 
-| 出口 | 場所 |
-|-----|------|
-| Hono | stdout（pino-pretty）、systemd 利用時は `journalctl --user -u rag_documents -f` |
+| Output | Location |
+|--------|-----------|
+| Hono | stdout (pino-pretty); with systemd: `journalctl --user -u rag_documents -f` |
 | Qdrant | `docker logs rag-qdrant -f` |
 | Ollama | `docker logs rag-ollama -f` |
 | Docling Serve | `docker logs rag-docling -f` |
 
-### 15.2 よくあるトラブル
+### 15.2 Common Issues
 
-| 症状 | 原因 | 対処 |
-|-----|------|----|
-| `/embeddings` で 404 | Ollama にモデル未投入 | `docker exec rag-ollama ollama pull bge-m3` |
-| `Dim mismatch` | 違うモデルを pull した | `.env` の `OLLAMA_EMBED_MODEL` と `EMBED_DIM` を一致させる |
-| Docling Serve OOM | 大量ページ PDF の同時投入 | `p-queue` の concurrency を 1 に下げる |
-| transformers.js が重い | 初回モデル DL | 初回のみ。ローカルキャッシュ後は速くなる |
-| ポート 7777 衝突 | 別プロセス使用中 | `RAG_API_PORT=7780 pnpm serve` |
-| 外部クライアントから接続不可 | API がバインドしてない / firewall | `RAG_API_HOST=127.0.0.1` で同ホスト前提。別ホストなら 0.0.0.0 + reverse proxy |
-| drawio で `pako.inflateRaw` 失敗 | 圧縮されていない平文 mxGraph | `decompressDiagram` 内の判定ガードを残しているので通常は問題なし |
-| 日本語チャンクが極小 | `chunkSize` が小さすぎ | `.env` の `CHUNK_SIZE` を 1024 などに上げる |
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| `/embeddings` returns 404 | Model not pulled in Ollama | `docker exec rag-ollama ollama pull bge-m3` |
+| `Dim mismatch` | Wrong model pulled | Ensure `OLLAMA_EMBED_MODEL` and `EMBED_DIM` match in `.env` |
+| Docling Serve OOM | Large multi-page PDF concurrent ingestion | Reduce `p-queue` concurrency to 1 |
+| transformers.js is slow | First model download | First run only. Faster after local caching |
+| Port 7777 conflict | Another process using the port | `RAG_API_PORT=7780 pnpm serve` |
+| External client cannot connect | API not bound / firewall | `RAG_API_HOST=127.0.0.1` assumes same host. For other hosts, use `0.0.0.0` + reverse proxy |
+| drawio `pako.inflateRaw` failure | Uncompressed plain-text mxGraph | Guard check in `decompressDiagram` handles this; usually not an issue |
+| Japanese chunks are too small | `chunkSize` is too small | Increase `CHUNK_SIZE` in `.env` to 1024 etc. |
 
-### 15.3 評価
+### 15.3 Evaluation
 
-簡易評価セット（質問 + 期待出典）を `rag/eval/qa.jsonl` に置き、`pnpm rag search` を回してヒット率を測る:
+Create a simple evaluation set (question + expected source) in `rag/eval/qa.jsonl` and measure hit rate with `pnpm rag search`:
 
 ```jsonl
-{"q":"このプロジェクトの概要は何ですか？","expect_source":"README.md"}
-{"q":"設定ファイルの配置先は？","expect_source":".env.example"}
+{"q":"What is the overview of this project?","expect_source":"README.md"}
+{"q":"Where is the configuration file?","expect_source":".env.example"}
 ```
 
 ```bash
-# evaluator は別途実装（jq + while read で十分）。詳細は付録参照。
+# Evaluator can be implemented separately (jq + while read is sufficient). See appendix for details.
 ```
 
-### 15.4 バックアップ
+### 15.4 Backup
 
 ```bash
 # Qdrant snapshot
 curl -fsS -X POST http://127.0.0.1:6333/collections/rag_documents/snapshots
-# → /qdrant/storage/snapshots に tar が生成される
+# -> Tar is generated in /qdrant/storage/snapshots
 
-# Docker volume バックアップ
+# Docker volume backup
 docker run --rm -v rag-qdrant-data:/data -v $(pwd):/backup busybox \
   tar cvf /backup/qdrant-$(date +%F).tar /data
 ```
 
 ---
 
-## 16. 付録
+## 16. Appendix
 
-### 16.1 代替スタック
+### 16.1 Alternative Stack
 
-| 層 | 主 | 副 / 代替 |
-|----|----|---------|
-| ベクトル DB | Qdrant | Milvus / Weaviate（本ガイドはサポートしない、構成例のみ） |
-| 埋め込み | Ollama bge-m3 | llama.cpp bge-m3 / `multilingual-e5-large` |
+| Layer | Primary | Alternative |
+|-------|---------|-------------|
+| Vector DB | Qdrant | Milvus / Weaviate (not supported in this guide, configuration examples only) |
+| Embedding | Ollama bge-m3 | llama.cpp bge-m3 / `multilingual-e5-large` |
 | LLM | Ollama qwen2.5 | llama.cpp qwen2.5 / `llama-3.1-8b-instruct` / `gemma-2-9b-it` |
-| リランカ | bge-reranker-v2-m3 (ONNX) | `cross-encoder/ms-marco-MiniLM-L-12-v2` |
-| ドキュメント変換 | Docling Serve | `unstructured.io` API（Python ベース、本ガイドはサポートしない） |
+| Reranker | bge-reranker-v2-m3 (ONNX) | `cross-encoder/ms-marco-MiniLM-L-12-v2` |
+| Document conversion | Docling Serve | `unstructured.io` API (Python-based, not supported in this guide) |
 | API | Hono | Fastify / Express |
 
-### 16.2 Sparse / ハイブリッド検索
+### 16.2 Sparse / Hybrid Search
 
-参照ガイド `pdf_image_rag_guide_nodejs.md` の Phase 9 (BM25 ハイブリッド) を参照。`wink-bm25-text-search` + `kuromoji.js` で sparse vector を構築し、Qdrant の Multi-Vector で Dense と組合せる。本ガイドの収録対象外（必要に応じて拡張）。
+See the reference guide `pdf_image_rag_guide_nodejs.md` Phase 9 (BM25 hybrid). Use `wink-bm25-text-search` + `kuromoji.js` to build sparse vectors and combine with Dense via Qdrant's Multi-Vector. Out of scope for this guide (extend as needed).
 
-### 16.3 セキュリティ留意点
+### 16.3 Security Considerations
 
-- API は **`127.0.0.1` バインド固定**を既定とする。LAN / 外部公開する場合は別 reverse proxy（nginx / caddy）+ 認証必須。
-- Docker Compose のポートも `127.0.0.1:` プレフィックスでループバックに限定済。
-- `data/` 配下のドキュメントは社内秘扱い。`.gitignore` に追加し、Qdrant snapshot も同等の機密扱い。
-- LLM プロンプトに credential を埋めない（出典 path のみで秘密値が引かれない設計）。
-- transformers.js の HuggingFace モデル DL を遮断したい環境では事前に `~/.cache/huggingface/hub` に同期しておく。
+- The API defaults to **`127.0.0.1` binding**. For LAN/public exposure, use a reverse proxy (nginx / caddy) + authentication.
+- Docker Compose ports also use the `127.0.0.1:` prefix to restrict to loopback.
+- Documents under `data/` are treated as confidential. Added to `.gitignore`; Qdrant snapshots should receive equivalent confidentiality treatment.
+- LLM prompts do not embed credentials (only source paths, designed so secrets are not extracted).
+- To block HuggingFace model downloads in restricted environments, pre-sync `~/.cache/huggingface/hub`.
 
-### 16.4 性能チューニング
+### 16.4 Performance Tuning
 
-| パラメータ | 既定 | 上げる効果 | 下げる効果 |
-|---------|------|----------|----------|
-| `CHUNK_SIZE` | 512 | 文脈幅↑、再現↑ | 適合↑、検索精度↑ |
-| `CHUNK_OVERLAP` | 64 | 境界欠落↓ | DB サイズ↓ |
-| `TOP_K_RETRIEVE` | 20 | 再現↑（リランカ負荷↑） | レイテンシ↓ |
-| `TOP_K_RERANK` | 5 | 文脈量↑ | LLM 入力↓ |
-| `hnsw.m` | 16 | リコール↑ | メモリ↓ |
-| `ef_construct` | 128 | 構築精度↑ | 構築速度↑ |
-| Qdrant `on_disk` | false | RAM↓ | レイテンシ↑ |
+| Parameter | Default | Increase Effect | Decrease Effect |
+|-----------|---------|----------------|-----------------|
+| `CHUNK_SIZE` | 512 | Wider context, higher recall | Higher precision, better search accuracy |
+| `CHUNK_OVERLAP` | 64 | Less boundary loss | Smaller DB size |
+| `TOP_K_RETRIEVE` | 20 | Higher recall (more reranker load) | Lower latency |
+| `TOP_K_RERANK` | 5 | More context | Less LLM input |
+| `hnsw.m` | 16 | Higher recall | Less memory |
+| `ef_construct` | 128 | Better build accuracy | Faster build |
+| Qdrant `on_disk` | false | Less RAM | Higher latency |
 
-### 16.5 参照ガイドからの転用箇所まとめ
+### 16.5 Summary of Inherited Sections from Reference Guide
 
-| 本ガイド | 参照ガイド対応箇所 |
-|---------|--------------------|
-| §2 動作要件 | 参照ガイド §3 |
-| §4 Phase 0 | 参照ガイド Phase 0 |
-| §5 Phase 1 | 参照ガイド Phase 1 |
-| §6.2 PDF 変換 | 参照ガイド Phase 2 (§2.2) |
-| §7 チャンキング | 参照ガイド Phase 3 を日本語強化 |
-| §8 埋め込み | 参照ガイド Phase 4 |
-| §9 Qdrant | 参照ガイド Phase 5 |
-| §10 検索 + リランク | 参照ガイド Phase 6 |
-| §11 LLM 生成 | 参照ガイド Phase 7 |
-| §12 Hono API | 参照ガイド Phase 8 を外部クライアント連携用にアレンジ |
-| §16.2 Sparse / ハイブリッド | 参照ガイド Phase 9 |
-| §15 運用 | 参照ガイド Phase 10 |
+| This guide | Reference guide section |
+|-----------|------------------------|
+| Section 2 Requirements | Reference guide Section 3 |
+| Section 4 Phase 0 | Reference guide Phase 0 |
+| Section 5 Phase 1 | Reference guide Phase 1 |
+| Section 6.2 PDF conversion | Reference guide Phase 2 (Section 2.2) |
+| Section 7 Chunking | Reference guide Phase 3, Japanese-enhanced |
+| Section 8 Embedding | Reference guide Phase 4 |
+| Section 9 Qdrant | Reference guide Phase 5 |
+| Section 10 Search + Reranking | Reference guide Phase 6 |
+| Section 11 LLM Generation | Reference guide Phase 7 |
+| Section 12 Hono API | Reference guide Phase 8, adapted for external client integration |
+| Section 16.2 Sparse / Hybrid | Reference guide Phase 9 |
+| Section 15 Operations | Reference guide Phase 10 |
 
-### 16.6 完了チェックリスト
+### 16.6 Completion Checklist
 
-- [ ] `rag-system/` 配下にプロジェクトを作成した
-- [ ] `docker compose up -d` で Qdrant / Ollama / Docling Serve が起動する
-- [ ] `bge-m3` / `qwen2.5:7b-instruct` を Ollama に投入した
-- [ ] `pnpm rag ingest data/svg/<sample>.svg` が正常終了する
-- [ ] `pnpm rag ingest data/drawio/<sample>.drawio` が正常終了する
-- [ ] `pnpm rag ingest data/pdf/<sample>.pdf` が正常終了する
-- [ ] `pnpm rag ingest data/md/<sample>.md` が正常終了する
-- [ ] `pnpm rag ingest data/txt/<sample>.txt` が正常終了する
-- [ ] `pnpm rag ingest https://example.com` が正常終了する
-- [ ] `pnpm rag ingest data/url/refs.urls` で URL リストの一括取込が正常終了する
-- [ ] `pnpm rag search "<クエリ>"` が回答 + 出典を返す
-- [ ] `curl http://127.0.0.1:7777/health` が `{"status":"ok"}` を返す
-- [ ] 外部クライアント（curl / fetch / Python など）から `/ingest` `/search` を呼び出せる
-- [ ] `RAG_BACKEND=llamacpp` で llama.cpp 経路に切替えられる（任意）
+- [ ] Created project under `rag-system/`
+- [ ] `docker compose up -d` starts Qdrant / Ollama / Docling Serve
+- [ ] Pulled `bge-m3` / `qwen2.5:7b-instruct` into Ollama
+- [ ] `pnpm rag ingest data/svg/<sample>.svg` completes successfully
+- [ ] `pnpm rag ingest data/drawio/<sample>.drawio` completes successfully
+- [ ] `pnpm rag ingest data/pdf/<sample>.pdf` completes successfully
+- [ ] `pnpm rag ingest data/md/<sample>.md` completes successfully
+- [ ] `pnpm rag ingest data/txt/<sample>.txt` completes successfully
+- [ ] `pnpm rag ingest https://example.com` completes successfully
+- [ ] `pnpm rag ingest data/url/refs.urls` bulk URL ingestion completes successfully
+- [ ] `pnpm rag search "<query>"` returns answer + sources
+- [ ] `curl http://127.0.0.1:7777/health` returns `{"status":"ok"}`
+- [ ] External clients (curl / fetch / Python etc.) can call `/ingest` and `/search`
+- [ ] `RAG_BACKEND=llamacpp` switches to the llama.cpp path (optional)
 
 ---
 
-**ガイド終わり** — 構築上の不明点や追加要件は `.aiprj/instructions.md` 経由で次セッションへ持ち込んでください。
+**End of guide** -- For build questions or additional requirements, carry them to the next session via `.aiprj/instructions.md`.

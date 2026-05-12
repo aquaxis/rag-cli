@@ -1,18 +1,18 @@
-# 03. CLI リファレンス
+# 03. CLI Reference
 
-`rag-cli` は `clap` ベースのサブコマンド型 CLI。一次ソースは [`crates/cli/src/main.rs`](../crates/cli/src/main.rs)。
+`rag-cli` is a `clap`-based subcommand CLI. The primary source is [`crates/cli/src/main.rs`](../crates/cli/src/main.rs).
 
-## 全体
+## Overview
 
 ```text
 rag-cli <COMMAND>
 
 Commands:
-  ingest   ファイル / ディレクトリ / URL / .urls を取込
-  search   検索 + LLM 応答
-  status   各サービスのヘルスと collection
-  reindex  collection を削除して再作成
-  serve    Hono 互換 HTTP API を起動
+  ingest   Ingest file / directory / URL / .urls
+  search   Search + LLM response
+  status   Service health and collection info
+  reindex  Delete and recreate collection
+  serve    Start Hono-compatible HTTP API
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -20,7 +20,7 @@ Options:
   -V, --version  Print version
 ```
 
-すべてのサブコマンドは `--help` で詳細を表示する。
+All subcommands support `--help` for details.
 
 ## `ingest`
 
@@ -28,24 +28,24 @@ Options:
 rag-cli ingest <TARGET>
 ```
 
-| 引数 | 必須 | 説明 |
-|------|------|------|
-| `<TARGET>` | ✅ | ファイル / ディレクトリ / URL / `.urls` ファイル パス |
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<TARGET>` | Yes | File / directory / URL / `.urls` file path |
 
-入力種別の判定:
+Input type detection:
 
-- `http://` `https://` で始まれば URL として扱い Docling Serve に転送。
-- `.urls` 拡張子のファイルは行ごとに URL として展開（`#` でコメント、空行除外）。
-- ディレクトリは再帰的に展開され、対応拡張子（`.pdf` `.png` `.jpg` `.jpeg` `.tiff` `.bmp` `.svg` `.drawio` `.md` `.markdown` `.txt` `.log` `.rst` `.urls`）のみを取込む。
-- 単一ファイルはその拡張子に応じて変換器を選択する。
+- Paths starting with `http://` or `https://` are treated as URLs and forwarded to Docling Serve.
+- `.urls` files are expanded line by line as URLs (`#` comments and blank lines are skipped).
+- Directories are expanded recursively, ingesting only supported extensions (`.pdf` `.png` `.jpg` `.jpeg` `.tiff` `.bmp` `.svg` `.drawio` `.md` `.markdown` `.txt` `.log` `.rst` `.urls`).
+- Single files use the converter matching their extension.
 
-出力（単一ファイル）:
+Output (single file):
 
 ```json
 {"chunks":1,"source":"data/md/note.md"}
 ```
 
-出力（複数ファイル / ディレクトリ）:
+Output (multiple files / directory):
 
 ```json
 {
@@ -56,7 +56,7 @@ rag-cli ingest <TARGET>
 }
 ```
 
-並列度は `tokio::sync::Semaphore::new(2)` で固定（同時 2 件まで）。
+Concurrency is limited to 2 simultaneous tasks (`tokio::sync::Semaphore::new(2)`).
 
 ## `search`
 
@@ -64,26 +64,26 @@ rag-cli ingest <TARGET>
 rag-cli search <QUERY> [OPTIONS]
 ```
 
-| 引数 | デフォルト | 説明 |
-|------|------------|------|
-| `<QUERY>` |  | 検索クエリ（必須、1〜2000 文字） |
-| `-k, --top-k <N>` | `20` | retrieve 候補数（Qdrant Dense 検索の上限） |
-| `-n, --top-n <N>` | `5` | rerank 後の出力数 |
-| `--no-rerank` | off | リランクをスキップ（bi-encoder のスコアのみで上位を返す） |
-| `--no-generate` | off | LLM 応答生成を無効化（出典のみ表示） |
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `<QUERY>` | | Search query (required, 1-2000 characters) |
+| `-k, --top-k <N>` | `20` | Number of retrieval candidates (Qdrant Dense search limit) |
+| `-n, --top-n <N>` | `5` | Number of results after reranking |
+| `--no-rerank` | off | Skip reranking (return top results by bi-encoder score only) |
+| `--no-generate` | off | Disable LLM response generation (show sources only) |
 
-出力:
+Output:
 
 ```text
-=== 回答 ===
-（LLM 応答、--no-generate 指定時はこの章ごと省略）
+=== Answer ===
+(LLM response; omitted when --no-generate is specified)
 
-=== 出典 ===
+=== Sources ===
 [1] <source> > <h1> > <h2> (rerank=<score>)
 [2] ...
 ```
 
-`rerank=` は rerank を行ったときのスコア。`--no-rerank` 指定時は `n/a`。
+`rerank=` shows the reranker score. When `--no-rerank` is specified, it shows `n/a`.
 
 ## `status`
 
@@ -91,7 +91,7 @@ rag-cli search <QUERY> [OPTIONS]
 rag-cli status
 ```
 
-引数なし。Qdrant / Ollama / Docling Serve のヘルスチェックと、Qdrant の collection 一覧を JSON で返す。
+No arguments. Returns a health check for Qdrant / Ollama / Docling Serve and the Qdrant collection list as JSON.
 
 ```json
 {
@@ -105,7 +105,7 @@ rag-cli status
 }
 ```
 
-`backend` の値は `RAG_BACKEND` の現在値（`ollama` または `llamacpp`）。
+The `backend` value reflects the current `RAG_BACKEND` setting (`ollama` or `llamacpp`).
 
 ## `reindex`
 
@@ -113,13 +113,13 @@ rag-cli status
 rag-cli reindex
 ```
 
-引数なし。Qdrant の `rag_documents`（`QDRANT_COLLECTION` で上書き可）collection を削除して再作成する。
+No arguments. Deletes and recreates the Qdrant collection `rag_documents` (overridable via `QDRANT_COLLECTION`).
 
 ```json
 {"collection":"rag_documents","recreated":true}
 ```
 
-取込済データはすべて消えるため、再投入が必要。
+All previously ingested data is lost and must be re-ingested.
 
 ## `serve`
 
@@ -127,34 +127,34 @@ rag-cli reindex
 rag-cli serve [OPTIONS]
 ```
 
-| 引数 | デフォルト | 説明 |
-|------|------------|------|
-| `-p, --port <N>` | `RAG_API_PORT`（既定 7777） | API バインドポート |
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `-p, --port <N>` | `RAG_API_PORT` (default 7777) | API bind port |
 
-`RAG_API_HOST`（既定 `127.0.0.1`）で listen し、Ctrl-C / SIGINT で停止する。エンドポイントは [`./04-rest-api.md`](./04-rest-api.md) を参照。
+Listens on `RAG_API_HOST` (default `127.0.0.1`) and stops on Ctrl-C / SIGINT. See [`./04-rest-api.md`](./04-rest-api.md) for endpoints.
 
 ```bash
 rag-cli serve --port 7780
-# → 127.0.0.1:7780 で起動
+# -> Starts on 127.0.0.1:7780
 ```
 
-## 終了コード
+## Exit Codes
 
-| コード | 意味 |
-|-------|------|
-| `0` | 成功 |
-| `1` | 失敗（取込・検索・API 起動エラーなど。`stderr` に `Error: <message>` を出力） |
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Failure (ingestion, search, or API startup error. `stderr` shows `Error: <message>`) |
 
-## ログ
+## Logging
 
-`tracing` を使ったログを `stderr` に出力する。レベルは `LOG_LEVEL` 環境変数（既定 `info`）で制御。
+Logging uses `tracing` and outputs to `stderr`. The level is controlled by the `LOG_LEVEL` environment variable (default `info`).
 
 ```bash
 LOG_LEVEL=debug rag-cli search "..."
 ```
 
-詳細は [`./05-configuration.md`](./05-configuration.md) を参照。
+See [`./05-configuration.md`](./05-configuration.md) for details.
 
 ---
 
-← [`./02-quickstart.md`](./02-quickstart.md) | → [`./04-rest-api.md`](./04-rest-api.md)
+<- [`./02-quickstart.md`](./02-quickstart.md) | -> [`./04-rest-api.md`](./04-rest-api.md)

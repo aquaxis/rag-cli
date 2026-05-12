@@ -1,22 +1,22 @@
-# 01. インストール
+# 01. Installation
 
-`rag-cli` は単一の Rust バイナリとして配布される。動作には Rust toolchain と、外部サービスとして Qdrant / Ollama / Docling Serve（PDF / 画像 / Web URL を取込む場合）が必要となる。
+`rag-cli` is distributed as a single Rust binary. It requires the Rust toolchain and external services: Qdrant, Ollama, and Docling Serve (for PDF/image/Web URL ingestion).
 
-## 動作環境
+## Requirements
 
-| 項目 | 要件 |
-|------|------|
-| OS | Linux (Ubuntu 22.04+ を確認) / macOS（Apple Silicon を含む）。Windows は WSL のみ。 |
-| Rust | stable 1.88 以上（`rust-toolchain.toml` で固定） |
-| Cargo | stable 同梱 |
-| Podman | 4.0+（`podman compose` 同梱）または `podman-compose`。Docker Compose 互換ファイル `docker-compose.yml` をそのまま利用可能 |
-| Ollama | 0.5.x 以上（または llama.cpp `llama-server`） |
-| RAM | 32 GB 推奨（LLM 推論時 16 GB 以上） |
-| ストレージ | SSD 100 GB 以上（モデルキャッシュと Qdrant データ用） |
+| Item | Requirement |
+|------|-------------|
+| OS | Linux (Ubuntu 22.04+ confirmed) / macOS (including Apple Silicon). Windows via WSL only. |
+| Rust | stable 1.88+ (pinned by `rust-toolchain.toml`) |
+| Cargo | bundled with stable |
+| Podman | 4.0+ (includes `podman compose`), or `podman-compose`. Uses the included `docker-compose.yml` directly |
+| Ollama | 0.5.x+ (or llama.cpp `llama-server`) |
+| RAM | 32 GB recommended (16 GB+ for LLM inference) |
+| Storage | SSD 100 GB+ (model cache and Qdrant data) |
 
-## Rust toolchain の導入
+## Install the Rust Toolchain
 
-公式インストーラを使う:
+Use the official installer:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -25,47 +25,47 @@ rustc --version
 cargo --version
 ```
 
-`rust-toolchain.toml` がリポジトリに含まれているため、リポジトリ内では自動的に stable が選択される。
+The repository includes a `rust-toolchain.toml`, so stable is selected automatically within the repo.
 
-## ソースの取得
+## Clone the Source
 
 ```bash
 git clone https://github.com/aquaxis/rag-cli.git
 cd rag-cli
 ```
 
-## ビルド方法
+## Build
 
-### A. ローカルでバイナリを生成
+### A. Build a local binary
 
 ```bash
 cargo build --release
-# バイナリ: ./target/release/rag-cli
+# Binary: ./target/release/rag-cli
 ```
 
-リリースビルドは初回 1〜2 分かかる（onnxruntime のプリビルドバイナリ DL を含む）。生成されるバイナリサイズは約 52 MB。
+The initial release build takes 1-2 minutes (including onnxruntime prebuilt binary download). The resulting binary is approximately 52 MB.
 
-### B. システムにインストール
+### B. Install system-wide
 
 ```bash
 cargo install --path crates/cli
-# バイナリ: ~/.cargo/bin/rag-cli
+# Binary: ~/.cargo/bin/rag-cli
 ```
 
-`~/.cargo/bin` が `PATH` に含まれていれば、どこからでも `rag-cli` が呼べる。
+If `~/.cargo/bin` is in your `PATH`, `rag-cli` is available from anywhere.
 
-## 外部サービスの起動
+## Start External Services
 
-### Podman Compose で Qdrant / Ollama / Docling Serve を起動
+### Start Qdrant / Ollama / Docling Serve with Podman Compose
 
 ```bash
 podman compose up -d
 podman compose ps
 ```
 
-`podman compose` は Podman 4.0 以降に同梱されている（古い環境では `podman-compose` Python パッケージを使う）。同梱の `docker-compose.yml` ファイル名はそのまま認識される。ポートの既定: Qdrant `127.0.0.1:6333`、Ollama `127.0.0.1:11434`、Docling Serve `127.0.0.1:5001`。
+`podman compose` is bundled with Podman 4.0+ (older environments can use the `podman-compose` Python package). The included `docker-compose.yml` filename is recognized as-is. Default ports: Qdrant `127.0.0.1:6333`, Ollama `127.0.0.1:11434`, Docling Serve `127.0.0.1:5001`.
 
-### Ollama にモデルを投入
+### Pull models into Ollama
 
 ```bash
 podman exec rag-ollama ollama pull bge-m3
@@ -73,37 +73,37 @@ podman exec rag-ollama ollama pull qwen2.5:7b-instruct
 podman exec rag-ollama ollama list
 ```
 
-`bge-m3`（埋込、1024 dim）と `qwen2.5:7b-instruct`（LLM）が必要。
+`bge-m3` (embedding, 1024 dim) and `qwen2.5:7b-instruct` (LLM) are required.
 
-### llama.cpp 副系統（任意）
+### llama.cpp alternative (optional)
 
-OpenAI 互換 API として `llama-server` を 8080（embeddings）と 8081（chat）で起動し、`.env` で `RAG_BACKEND=llamacpp` に切替える:
+Start `llama-server` on ports 8080 (embeddings) and 8081 (chat) with OpenAI-compatible API, then switch `.env` to `RAG_BACKEND=llamacpp`:
 
 ```bash
 llama-server -m models/bge-m3-Q5_K_M.gguf --port 8080 --embeddings &
 llama-server -m models/qwen2.5-7b-instruct-Q5_K_M.gguf --port 8081 -c 8192 &
 ```
 
-## 環境変数の設定
+## Configure Environment Variables
 
-`.env.example` を `.env` にコピーして編集する:
+Copy `.env.example` to `.env` and edit:
 
 ```bash
 cp .env.example .env
 $EDITOR .env
 ```
 
-詳細は [`./05-configuration.md`](./05-configuration.md) を参照。
+See [`./05-configuration.md`](./05-configuration.md) for details.
 
-## 動作確認
+## Verify Installation
 
 ```bash
 ./target/release/rag-cli --version
 ./target/release/rag-cli status
 ```
 
-`status` が `qdrant: ok / ollama: ok` を返せばインストール完了。次は [`./02-quickstart.md`](./02-quickstart.md) へ。
+If `status` returns `qdrant: ok / ollama: ok`, installation is complete. Next: [`./02-quickstart.md`](./02-quickstart.md).
 
 ---
 
-← [`./README.md`](./README.md) | → [`./02-quickstart.md`](./02-quickstart.md)
+<- [`./README.md`](./README.md) | -> [`./02-quickstart.md`](./02-quickstart.md)

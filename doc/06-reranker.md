@@ -1,114 +1,114 @@
-# 06. リランカ（bge-reranker-v2-m3）
+# 06. Reranker (bge-reranker-v2-m3)
 
-`rag-cli search` のリランクは `bge-reranker-v2-m3-ONNX` を CPU + fp32 で推論する。`ort` + `tokenizers` + `hf-hub` クレートを使用し、既存 collection に対して順位を再評価する。
+The reranking in `rag-cli search` uses `bge-reranker-v2-m3-ONNX` for CPU + fp32 inference. It uses the `ort`, `tokenizers`, and `hf-hub` crates to re-rank results against the existing collection.
 
-## なぜリランカが必要か
+## Why a Reranker?
 
-bi-encoder（`bge-m3`）の埋込類似度は速いが、文脈の細部までは反映しない。クロスエンコーダの bge-reranker-v2-m3 はクエリと passage を同時に見るためスコア精度が高く、上位 5〜10 件の並べ替えに有効。
+Bi-encoder (`bge-m3`) embedding similarity is fast but does not capture contextual nuances. The cross-encoder bge-reranker-v2-m3 examines the query and passage simultaneously, producing higher-quality scores that effectively reorder the top 5-10 results.
 
-例: クエリ「web 取込の対応日」に対する順位（ローカル検証）
+Example: ranking for the query "web ingestion support date"
 
-| 順位 | リランクなし | リランクあり |
-|------|-------------|-------------|
-| 1 | `changelog.txt` | `changelog.txt`（rerank=0.137） |
-| 2 | `hello.svg` | `note.md`（rerank=-11.025） |
-| 3 | `note.md`（upload） | `note.md`（rerank=-11.025） |
-| 4 | `note.md`（md） | `hello.svg`（rerank=-11.035） |
+| Rank | Without reranking | With reranking |
+|------|-------------------|----------------|
+| 1 | `changelog.txt` | `changelog.txt` (rerank=0.137) |
+| 2 | `hello.svg` | `note.md` (rerank=-11.025) |
+| 3 | `note.md` (upload) | `note.md` (rerank=-11.025) |
+| 4 | `note.md` (md) | `hello.svg` (rerank=-11.035) |
 
-無関係な SVG が 2 位 → 4 位に降格、関連性の高いノートが上位に繰り上がる。
+The irrelevant SVG drops from rank 2 to rank 4, while the relevant note moves up.
 
-## モデルファイルの取得
+## Model File Acquisition
 
-リランカは初回起動時に以下の 3 ファイルを取得する:
+On first run, the reranker downloads three files:
 
-| ファイル | サイズ目安 |
-|---------|-----------|
+| File | Approximate Size |
+|------|-------------------|
 | `onnx/model.onnx` | ~50 MB |
-| `onnx/model.onnx_data` | ~570 MB（外部データ） |
+| `onnx/model.onnx_data` | ~570 MB (external data) |
 | `tokenizer.json` | ~10 MB |
 
-合計 約 600 MB。HF Hub からの DL 経路は以下の優先順位で決定する:
+Total: ~600 MB. The download path follows this priority:
 
-1. `RAG_RERANKER_MODEL_DIR=/path` が設定されていれば、そのディレクトリから直接読込（DL なし）
-2. それ以外は `hf-hub` クレートで `RERANKER_MODEL`（既定 `onnx-community/bge-reranker-v2-m3-ONNX`）を取得
-   - キャッシュディレクトリ: `RAG_HF_CACHE_DIR` または既定 `~/.cache/huggingface/hub/`
+1. If `RAG_RERANKER_MODEL_DIR=/path` is set, read directly from that directory (no download)
+2. Otherwise, download via `hf-hub` crate using `RERANKER_MODEL` (default `onnx-community/bge-reranker-v2-m3-ONNX`)
+   - Cache directory: `RAG_HF_CACHE_DIR` or default `~/.cache/huggingface/hub/`
 
-## オフライン環境での運用
+## Offline Operation
 
-事前にモデルを DL し、`RAG_RERANKER_MODEL_DIR` で指定する:
+Download the model in advance and point `RAG_RERANKER_MODEL_DIR` to it:
 
 ```bash
-# 1. ネット接続環境でモデルを DL（HF CLI または `rag-cli search` を一度実行）
+# 1. Download the model in a networked environment (via HF CLI or by running rag-cli search once)
 rag-cli search "test" --top-n 1
-# → ~/.cache/huggingface/hub/models--onnx-community--bge-reranker-v2-m3-ONNX/snapshots/<hash>/
+# -> ~/.cache/huggingface/hub/models--onnx-community--bge-reranker-v2-m3-ONNX/snapshots/<hash>/
 
-# 2. オフライン環境にコピー
+# 2. Copy to the offline environment
 rsync -av ~/.cache/huggingface/hub/models--onnx-community--bge-reranker-v2-m3-ONNX/snapshots/<hash>/ \
   /opt/rag/reranker/
 
-# 3. RAG_RERANKER_MODEL_DIR を設定
+# 3. Set RAG_RERANKER_MODEL_DIR
 export RAG_RERANKER_MODEL_DIR=/opt/rag/reranker
 rag-cli search "..." --top-n 3
 ```
 
-`RAG_RERANKER_MODEL_DIR` 配下に必要なレイアウト:
+Required layout under `RAG_RERANKER_MODEL_DIR`:
 
 ```text
 /opt/rag/reranker/
-├── model.onnx
-├── model.onnx_data
-└── tokenizer.json
++-- model.onnx
++-- model.onnx_data
++-- tokenizer.json
 ```
 
-`onnx/` サブディレクトリは不要。スナップショットディレクトリから 3 ファイルを直接持ってくる（または symlink でも可）。
+No `onnx/` subdirectory is needed. Copy the three files directly from the snapshot directory (symbolic links also work).
 
-## 性能
+## Performance
 
-| シナリオ | レイテンシ |
-|---------|------------|
-| Cold start（CLI 1 回起動、初回のみ） | ~2.3 s（モデル読込含む） |
-| Warm（API サーバ、2 回目以降） | ~0.4 s（OnceLock + Mutex で session 再利用） |
+| Scenario | Latency |
+|----------|---------|
+| Cold start (CLI, first run only) | ~2.3 s (including model loading) |
+| Warm (API server, subsequent calls) | ~0.4 s (OnceLock + Mutex session reuse) |
 
-CLI は 1 回ごとにプロセスが終了するため、毎回 cold start となる。バッチ処理や API 利用時は `rag-cli serve` を起動して常駐させるのが効率的。
+Since the CLI process exits after each run, every invocation is a cold start. For batch processing or API usage, run `rag-cli serve` to keep the process alive.
 
-## バッチサイズと メモリ
+## Batch Size and Memory
 
-| 環境変数 | 既定 | 説明 |
-|---------|------|------|
-| `RAG_RERANK_BATCH` | `8` | 1 推論で処理する passage 数 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RAG_RERANK_BATCH` | `8` | Number of passages processed per inference call |
 
-メモリ目安:
-- セッション常駐: ~1.5 GB（fp32）
-- 推論時の一時メモリ: バッチ × 系列長 × 2 (i64) × ~3 倍
+Memory estimates:
+- Resident session memory: ~1.5 GB (fp32)
+- Inference temporary memory: batch * sequence_length * 2 (i64) * ~3x
 
-メモリ不足時は `RAG_RERANK_BATCH=1` に下げる。
+If memory is insufficient, reduce `RAG_RERANK_BATCH=1`.
 
-## リランクをスキップする
+## Skipping Reranking
 
 ```bash
 rag-cli search "..." --top-n 5 --no-rerank
 ```
 
-または API 経由:
+Or via API:
 
 ```json
 {"query":"...", "top_n":5, "rerank":false}
 ```
 
-リランクなしでも bi-encoder のスコアで上位を返すため、要約や粗い検索には十分な場合が多い。
+Without reranking, results are still returned by bi-encoder score, which is often sufficient for summarization or approximate search.
 
-## 内部実装の概要
+## Internal Implementation Overview
 
-- セッションは `OnceLock<RerankerSession>` でグローバルキャッシュ
-- `Session::run` が `&mut self` のため、Session を `tokio::sync::Mutex` でラップ
-- `Tensor::from_array((shape, Vec<i64>))` のタプル形式を採用（ndarray のバージョン衝突を回避）
-- 入力は `input_ids` + `attention_mask`（XLM-RoBERTa 系のため `token_type_ids` は不要）
-  - 古い BERT 系モデルを `RERANKER_MODEL` に指定した場合、`Session::inputs()` を見て `token_type_ids` の有無を動的に判定
+- Session is cached globally via `OnceLock<RerankerSession>`
+- `Session::run` requires `&mut self`, so the Session is wrapped in `tokio::sync::Mutex`
+- Uses `Tensor::from_array((shape, Vec<i64>))` tuple format (avoids ndarray version conflicts)
+- Input is `input_ids` + `attention_mask` (XLM-RoBERTa-based, so `token_type_ids` is not needed)
+  - If an older BERT-based model is specified via `RERANKER_MODEL`, `Session::inputs()` is checked dynamically for `token_type_ids` presence
 - `tokenizer.with_truncation(max_length=512)` + `with_padding(BatchLongest)`
-- 出力 `logits[bs, 1]` を float32 で抽出し、降順ソート → `top_n` を返却
+- Output `logits[bs, 1]` is extracted as float32, sorted descending, and `top_n` results are returned
 
-ソース: [`crates/search/src/rerank.rs`](../crates/search/src/rerank.rs)
+Source: [`crates/search/src/rerank.rs`](../crates/search/src/rerank.rs)
 
 ---
 
-← [`./05-configuration.md`](./05-configuration.md) | → [`./07-troubleshooting.md`](./07-troubleshooting.md)
+<- [`./05-configuration.md`](./05-configuration.md) | -> [`./07-troubleshooting.md`](./07-troubleshooting.md)
